@@ -63,6 +63,7 @@ impl Cat {
         matches!(self, Cat::Calculator | Cat::Conversion | Cat::TopHit)
     }
 
+    #[allow(dead_code)]
     pub fn row_height(self) -> f32 {
         match self {
             _ if self.is_card() => CARD_H,
@@ -102,6 +103,18 @@ pub enum Item {
 pub struct Row {
     pub cat: Cat,
     pub item: Item,
+}
+
+impl Row {
+    pub fn row_height(&self) -> f32 {
+        match (&self.cat, &self.item) {
+            (Cat::TopHit, Item::File(..)) => 76.0,
+            _ if self.cat.is_card() => CARD_H,
+            (Cat::Web, _) => WEB_H,
+            (_, Item::File(..)) => 58.0,
+            _ => ROW_H,
+        }
+    }
 }
 
 pub struct Glint {
@@ -334,7 +347,7 @@ impl Glint {
                 h += HEAD_H;
             }
             last = Some(r.cat);
-            h += r.cat.row_height();
+            h += r.row_height();
         }
         h
     }
@@ -631,7 +644,7 @@ impl Glint {
         let galley = p.layout_no_wrap(text, FontId::proportional(12.0), FG);
         let size = galley.size() + Vec2::new(20.0, 10.0);
         let rect = Rect::from_min_size(full.max - size - Vec2::splat(12.0), size);
-        p.rect_filled(rect, 10, egui::Color32::from_rgba_premultiplied(20, 22, 30, 230));
+        p.rect_filled(rect, 10, egui::Color32::from_rgba_premultiplied(16, 16, 18, 230));
         p.galley(rect.min + Vec2::new(10.0, 5.0), galley, FG);
     }
 }

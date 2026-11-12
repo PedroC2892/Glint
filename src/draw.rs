@@ -7,18 +7,19 @@ use crate::ui::{Cat, Glint, Item};
 use eframe::egui::{self, Color32, CornerRadius, FontId, Label, Pos2, Rect, RichText, ScrollArea, Sense, Stroke, Vec2};
 use std::path::Path;
 
-// macOS Sequoia dark frosted glass (translucent dark slate acrylic).
-pub const BG: Color32 = Color32::from_rgba_premultiplied(32, 40, 56, 238);
-pub const BORDER: Color32 = Color32::from_rgba_premultiplied(50, 60, 75, 100);
-pub const FG: Color32 = Color32::from_rgb(248, 248, 250);
-pub const MUTED: Color32 = Color32::from_rgb(165, 178, 200);
+// Transparent black glass (premultiplied RGBA: r <= a, g <= a, b <= a).
+pub const BG: Color32 = Color32::from_rgba_premultiplied(14, 14, 16, 235);
+pub const BORDER: Color32 = Color32::from_rgba_premultiplied(55, 55, 60, 90);
+pub const FG: Color32 = Color32::from_rgb(245, 245, 248);
+pub const MUTED: Color32 = Color32::from_rgb(155, 155, 162);
+pub const LOC_COLOR: Color32 = Color32::from_rgb(125, 125, 134);
 pub const ACCENT: Color32 = Color32::from_rgb(52, 120, 246);
-pub const HAIRLINE: Color32 = Color32::from_rgba_premultiplied(35, 42, 55, 60);
-const SEL_FILL: Color32 = Color32::from_rgba_premultiplied(50, 68, 96, 140);
-const SEL_STROKE: Color32 = Color32::from_rgba_premultiplied(80, 105, 140, 100);
-const CARD_FILL: Color32 = Color32::from_rgba_premultiplied(42, 55, 75, 130);
-const CARD_STROKE: Color32 = Color32::from_rgba_premultiplied(75, 95, 125, 80);
-const HEAD: Color32 = Color32::from_rgb(180, 195, 218);
+pub const HAIRLINE: Color32 = Color32::from_rgba_premultiplied(32, 32, 35, 55);
+const SEL_FILL: Color32 = Color32::from_rgba_premultiplied(45, 45, 50, 145);
+const SEL_STROKE: Color32 = Color32::from_rgba_premultiplied(80, 80, 88, 110);
+const CARD_FILL: Color32 = Color32::from_rgba_premultiplied(26, 26, 30, 140);
+const CARD_STROKE: Color32 = Color32::from_rgba_premultiplied(60, 60, 68, 85);
+const HEAD: Color32 = Color32::from_rgb(170, 170, 178);
 
 fn text(t: impl Into<String>, size: f32, color: Color32) -> RichText {
     RichText::new(t).size(size).color(color)
@@ -29,7 +30,7 @@ pub fn panel(p: &egui::Painter, r: Rect) {
     p.rect_filled(r, 16, BG);
     // A faint top sheen, like light on glass.
     let sheen = Rect::from_min_max(r.min, Pos2::new(r.right(), r.top() + 70.0f32.min(r.height())));
-    p.rect_filled(sheen, CornerRadius { nw: 16, ne: 16, sw: 0, se: 0 }, Color32::from_rgba_premultiplied(8, 10, 14, 12));
+    p.rect_filled(sheen, CornerRadius { nw: 16, ne: 16, sw: 0, se: 0 }, Color32::from_rgba_premultiplied(8, 8, 8, 10));
     p.rect_stroke(r.shrink(0.5), 16, Stroke::new(1.0, BORDER), egui::StrokeKind::Inside);
 }
 
@@ -128,6 +129,18 @@ impl Glint {
         }
     }
 
+    /// Third line under a file or folder result: the full folder location.
+    fn location(&self, item: &Item) -> String {
+        match item {
+            Item::File(p, true) => p.to_string_lossy().into_owned(),
+            Item::File(p, false) => p
+                .parent()
+                .map(|parent| parent.to_string_lossy().into_owned())
+                .unwrap_or_else(|| p.to_string_lossy().into_owned()),
+            _ => String::new(),
+        }
+    }
+
     pub fn list(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
@@ -144,7 +157,7 @@ impl Glint {
                 if selected && let Item::Define(w) = &row.item {
                     self.start_definition(&ctx, w); // Only on purpose, never while typing.
                 }
-                let h = row.cat.row_height();
+                let h = row.row_height();
                 let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), Sense::click());
                 let card = row.cat.is_card();
                 let inner = if card { rect.shrink2(Vec2::new(12.0, 5.0)) } else { rect.shrink2(Vec2::new(10.0, 1.0)) };
@@ -179,15 +192,23 @@ impl Glint {
                 let text_rect = Rect::from_min_max(Pos2::new(icon.right() + 11.0, inner.top()), Pos2::new(right, inner.bottom()));
                 let title = self.row_title(&row.item);
                 let sub = self.subtitle(&row.item);
-                let (ts, ss) = if card { (16.0, 12.5) } else { (13.5, 11.5) };
+                let loc = self.location(&row.item);
+                let (ts, ss, ls) = if card { (16.0, 12.5, 11.0) } else { (13.5, 11.5, 10.5) };
                 let layout = egui::Layout::top_down(egui::Align::Min);
                 ui.scope_builder(egui::UiBuilder::new().max_rect(text_rect).layout(layout), |ui| {
-                    ui.spacing_mut().item_spacing.y = 2.0;
-                    let lines = if sub.is_empty() { ts } else { ts + ss + 6.0 };
-                    ui.add_space(((text_rect.height() - lines) / 2.0 - 1.0).max(0.0));
+                    ui.spacing_mut().item_spacing.y = 1.5;
+                    let has_sub = !sub.is_empty();
+                    let has_loc = !loc.is_empty();
+                    let lines = ts
+                        + if has_sub { ss + 3.0 } else { 0.0 }
+                        + if has_loc { ls + 3.0 } else { 0.0 };
+                    ui.add_space(((text_rect.height() - lines) / 2.0).max(0.0));
                     ui.add(Label::new(text(title, ts, FG)).truncate());
-                    if !sub.is_empty() {
+                    if has_sub {
                         ui.add(Label::new(text(sub, ss, MUTED)).truncate());
+                    }
+                    if has_loc {
+                        ui.add(Label::new(text(loc, ls, LOC_COLOR)).truncate());
                     }
                 });
                 if selected && self.scroll_to_sel {
