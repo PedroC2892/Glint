@@ -1,0 +1,5 @@
+# Build output
+/target
+
+# Local screenshots from manual testing (they show real file names)
+/shots

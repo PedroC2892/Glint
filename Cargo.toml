@@ -1,0 +1,28 @@
+[package]
+name = "lookout"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+eframe = "0.37.0"
+egui_extras = { version = "0.37.0", features = ["file", "image", "svg"] }
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+png = "0.18.1"
+serde_json = "1.0.154"
+ureq = { version = "3.5.2", features = ["json"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+raw-window-handle = "0.6"
+x11rb = "0.13"
+
+# Optimise dependencies even in debug builds: egui, image decoding and the
+# per-keystroke search are many times slower without optimisation.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+lto = "thin"
+strip = true
