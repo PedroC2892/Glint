@@ -129,5 +129,6 @@ focus-stealing prevention.
 | `src/calc.rs` | Calculator, unit and currency conversion |
 | `src/open.rs` | Launching apps and files, online lookups |
 | `src/x11focus.rs` | Keyboard focus on X11 |
-| `assets/glint.svg` | App icon |
+| `assets/glint.svg` | App icon (vector) |
+| `assets/icons/` | App icon PNG suite (16x16 to 512x512) |
 | `install.sh` | Per-user installer and shortcut configurator |

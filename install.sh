@@ -1,7 +1,7 @@
 #!/bin/sh
 # Install Glint for the current user (no root needed).
 #
-#   ./install.sh              build, then install binary, menu entry, icon and Super+Space shortcut
+#   ./install.sh              build, then install binary, menu entry, icon suite and Super+Space shortcut
 #   ./install.sh --uninstall  remove everything this script installed
 #
 # Paths follow the XDG Base Directory spec: $XDG_DATA_HOME (default
@@ -14,9 +14,7 @@ DATA_HOME=${XDG_DATA_HOME:-"$HOME/.local/share"}
 case $DATA_HOME in /*) ;; *) DATA_HOME="$HOME/.local/share" ;; esac
 BIN_DIR="$HOME/.local/bin"
 DESKTOP_FILE="$DATA_HOME/applications/$APP_ID.desktop"
-ICON_DIR="$DATA_HOME/icons/hicolor"
-SVG_ICON="$ICON_DIR/scalable/apps/$APP_ID.svg"
-PNG_SIZES="48 128 256"
+PNG_SIZES="16 24 32 48 64 128 256 512"
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
@@ -24,9 +22,11 @@ refresh_caches() {
     if have update-desktop-database; then
         update-desktop-database "$DATA_HOME/applications" >/dev/null 2>&1 || true
     fi
-    if have gtk-update-icon-cache && [ -f "$ICON_DIR/index.theme" ]; then
-        gtk-update-icon-cache -f -t "$ICON_DIR" >/dev/null 2>&1 || true
-    fi
+    for base in "$HOME/.icons/hicolor" "$DATA_HOME/icons/hicolor"; do
+        if have gtk-update-icon-cache && [ -d "$base" ]; then
+            gtk-update-icon-cache -f -t "$base" >/dev/null 2>&1 || true
+        fi
+    done
     if have kbuildsycoca6; then
         kbuildsycoca6 >/dev/null 2>&1 || true
     elif have kbuildsycoca5; then
@@ -35,9 +35,12 @@ refresh_caches() {
 }
 
 if [ "${1:-}" = "--uninstall" ]; then
-    rm -f "$BIN_DIR/$APP_ID" "$DESKTOP_FILE" "$SVG_ICON"
-    for s in $PNG_SIZES; do
-        rm -f "$ICON_DIR/${s}x${s}/apps/$APP_ID.png"
+    rm -f "$BIN_DIR/$APP_ID" "$DESKTOP_FILE" "$DATA_HOME/pixmaps/$APP_ID.png" "$DATA_HOME/pixmaps/$APP_ID.svg"
+    for base in "$HOME/.icons/hicolor" "$DATA_HOME/icons/hicolor"; do
+        rm -f "$base/scalable/apps/$APP_ID.svg"
+        for s in $PNG_SIZES; do
+            rm -f "$base/${s}x${s}/apps/$APP_ID.png"
+        done
     done
     if have gsettings && gsettings list-schemas 2>/dev/null | grep -q "org.gnome.settings-daemon.plugins.media-keys"; then
         SCHEMA="org.gnome.settings-daemon.plugins.media-keys"
@@ -60,7 +63,7 @@ fi
 
 # 1. Build (or reuse an existing release binary when cargo is missing).
 if have cargo; then
-    echo "Building Glint…"
+    echo "Building Glint (release)…"
     cargo build --release --manifest-path "$REPO_DIR/Cargo.toml"
 elif [ ! -x "$REPO_DIR/target/release/$APP_ID" ]; then
     echo "cargo was not found and no built binary exists; install Rust from https://rustup.rs first." >&2
@@ -71,36 +74,47 @@ fi
 mkdir -p "$BIN_DIR"
 install -m 755 "$REPO_DIR/target/release/$APP_ID" "$BIN_DIR/$APP_ID"
 
-# 3. Icon: SVG always, PNG sizes when a converter is available.
-mkdir -p "$(dirname "$SVG_ICON")"
-install -m 644 "$REPO_DIR/assets/$APP_ID.svg" "$SVG_ICON"
-for s in $PNG_SIZES; do
-    out="$ICON_DIR/${s}x${s}/apps/$APP_ID.png"
-    mkdir -p "$(dirname "$out")"
-    if have rsvg-convert; then
-        rsvg-convert -w "$s" -h "$s" "$REPO_DIR/assets/$APP_ID.svg" -o "$out" 2>/dev/null || rm -f "$out"
-    elif have inkscape; then
-        inkscape "$REPO_DIR/assets/$APP_ID.svg" -w "$s" -h "$s" -o "$out" >/dev/null 2>&1 || rm -f "$out"
-    elif have magick; then
-        magick -background none "$REPO_DIR/assets/$APP_ID.svg" -resize "${s}x${s}" "$out" 2>/dev/null || rm -f "$out"
-    fi
-done
+# 3. Icon: SVG + PNG suite + pixmaps.
+# We install to ~/.icons/hicolor (user icon theme), ~/.local/share/icons/hicolor (if writable),
+# and ~/.local/share/pixmaps so that all desktop launchers find the icon immediately.
+install_icons_to() {
+    target_base="$1"
+    svg_target="$target_base/scalable/apps/$APP_ID.svg"
+    mkdir -p "$(dirname "$svg_target")" 2>/dev/null || return 0
+    install -m 644 "$REPO_DIR/assets/$APP_ID.svg" "$svg_target" 2>/dev/null || true
+    for s in $PNG_SIZES; do
+        out="$target_base/${s}x${s}/apps/$APP_ID.png"
+        mkdir -p "$(dirname "$out")" 2>/dev/null || continue
+        if [ -f "$REPO_DIR/assets/icons/${s}x${s}.png" ]; then
+            install -m 644 "$REPO_DIR/assets/icons/${s}x${s}.png" "$out" 2>/dev/null || true
+        fi
+    done
+}
 
-# 4. Menu entry. X-KDE-Shortcuts asks Plasma for Meta+Space (Win+Space) when it is free;
-#    other desktops ignore it.
+install_icons_to "$HOME/.icons/hicolor"
+install_icons_to "$DATA_HOME/icons/hicolor"
+
+mkdir -p "$DATA_HOME/pixmaps" 2>/dev/null || true
+if [ -f "$REPO_DIR/assets/icons/256x256.png" ]; then
+    install -m 644 "$REPO_DIR/assets/icons/256x256.png" "$DATA_HOME/pixmaps/$APP_ID.png" 2>/dev/null || true
+fi
+install -m 644 "$REPO_DIR/assets/$APP_ID.svg" "$DATA_HOME/pixmaps/$APP_ID.svg" 2>/dev/null || true
+
+# 4. Menu entry.
+#    X-KDE-Shortcuts asks Plasma for Meta+Space (Win+Space) when it is free.
 mkdir -p "$(dirname "$DESKTOP_FILE")"
 cat > "$DESKTOP_FILE" <<EOF
 [Desktop Entry]
 Type=Application
 Version=1.5
 Name=Glint
-GenericName=Search Launcher
-Comment=Find apps, files and settings, do maths and conversions
-Exec="$BIN_DIR/$APP_ID"
+GenericName=Spotlight Search Launcher
+Comment=Spotlight-style search for apps, files, math, definitions and web
+Exec=$BIN_DIR/$APP_ID
 Icon=$APP_ID
 Terminal=false
-Categories=Utility;Core;
-Keywords=search;launcher;find;calculator;
+Categories=Utility;Core;System;FileTools;
+Keywords=search;launcher;spotlight;find;calculator;notes;glint;files;apps;
 StartupNotify=false
 StartupWMClass=$APP_ID
 X-KDE-Shortcuts=Meta+Space
@@ -134,6 +148,8 @@ fi
 
 refresh_caches
 
-echo "Glint installed. Find it in your applications menu."
-echo "Launch shortcut: Win + Space (Super + Space) is set up for KDE and GNOME."
-echo "For other desktops or window managers, bind Super+Space to: $BIN_DIR/$APP_ID"
+echo "Glint installed successfully!"
+echo "- Executable: $BIN_DIR/$APP_ID"
+echo "- Launcher entry: $DESKTOP_FILE"
+echo "- Icon: $APP_ID (SVG & PNG suite installed)"
+echo "- Shortcut: Win + Space (Super + Space)"
