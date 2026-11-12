@@ -267,7 +267,15 @@ pub fn kind_text(path: &Path, is_dir: bool) -> String {
 // --- usage history: `<count>\t<key>` per line, key `app:<id>` or `file:<path>`
 
 fn history_path() -> PathBuf {
-    data_home().join("lookout").join("history.tsv")
+    let glint_path = data_home().join("glint").join("history.tsv");
+    let legacy_path = data_home().join("lookout").join("history.tsv");
+    if !glint_path.exists() && legacy_path.exists() {
+        if let Some(parent) = glint_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = std::fs::copy(&legacy_path, &glint_path);
+    }
+    glint_path
 }
 
 pub fn load_history() -> HashMap<String, u32> {

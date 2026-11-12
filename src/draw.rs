@@ -3,21 +3,22 @@
 
 use crate::index::{self, Kind};
 use crate::open::Fetch;
-use crate::ui::{Cat, Item, Lookout};
+use crate::ui::{Cat, Glint, Item};
 use eframe::egui::{self, Color32, CornerRadius, FontId, Label, Pos2, Rect, RichText, ScrollArea, Sense, Stroke, Vec2};
 use std::path::Path;
 
-// Black glass, light text (colours are premultiplied where translucent).
-pub const BG: Color32 = Color32::from_rgba_premultiplied(0, 0, 0, 245);
-pub const BORDER: Color32 = Color32::from_rgba_premultiplied(44, 44, 44, 44);
-pub const FG: Color32 = Color32::from_rgb(242, 242, 244);
-pub const MUTED: Color32 = Color32::from_rgb(160, 160, 166);
-pub const ACCENT: Color32 = Color32::from_rgb(10, 100, 220);
-pub const HAIRLINE: Color32 = Color32::from_rgba_premultiplied(30, 30, 30, 30);
-const SEL_FILL: Color32 = Color32::from_rgba_premultiplied(36, 36, 38, 38);
-const SEL_STROKE: Color32 = Color32::from_rgba_premultiplied(60, 60, 60, 60);
-const CARD_FILL: Color32 = Color32::from_rgba_premultiplied(16, 16, 16, 16);
-const HEAD: Color32 = Color32::from_rgb(190, 190, 196);
+// macOS Sequoia dark frosted glass (translucent dark slate acrylic).
+pub const BG: Color32 = Color32::from_rgba_premultiplied(32, 40, 56, 238);
+pub const BORDER: Color32 = Color32::from_rgba_premultiplied(50, 60, 75, 100);
+pub const FG: Color32 = Color32::from_rgb(248, 248, 250);
+pub const MUTED: Color32 = Color32::from_rgb(165, 178, 200);
+pub const ACCENT: Color32 = Color32::from_rgb(52, 120, 246);
+pub const HAIRLINE: Color32 = Color32::from_rgba_premultiplied(35, 42, 55, 60);
+const SEL_FILL: Color32 = Color32::from_rgba_premultiplied(50, 68, 96, 140);
+const SEL_STROKE: Color32 = Color32::from_rgba_premultiplied(80, 105, 140, 100);
+const CARD_FILL: Color32 = Color32::from_rgba_premultiplied(42, 55, 75, 130);
+const CARD_STROKE: Color32 = Color32::from_rgba_premultiplied(75, 95, 125, 80);
+const HEAD: Color32 = Color32::from_rgb(180, 195, 218);
 
 fn text(t: impl Into<String>, size: f32, color: Color32) -> RichText {
     RichText::new(t).size(size).color(color)
@@ -25,14 +26,14 @@ fn text(t: impl Into<String>, size: f32, color: Color32) -> RichText {
 
 /// The rounded glass panel behind everything.
 pub fn panel(p: &egui::Painter, r: Rect) {
-    p.rect_filled(r, 14, BG);
+    p.rect_filled(r, 16, BG);
     // A faint top sheen, like light on glass.
     let sheen = Rect::from_min_max(r.min, Pos2::new(r.right(), r.top() + 70.0f32.min(r.height())));
-    p.rect_filled(sheen, CornerRadius { nw: 14, ne: 14, sw: 0, se: 0 }, Color32::from_rgba_premultiplied(5, 6, 8, 6));
-    p.rect_stroke(r.shrink(0.5), 14, Stroke::new(1.0, BORDER), egui::StrokeKind::Inside);
+    p.rect_filled(sheen, CornerRadius { nw: 16, ne: 16, sw: 0, se: 0 }, Color32::from_rgba_premultiplied(8, 10, 14, 12));
+    p.rect_stroke(r.shrink(0.5), 16, Stroke::new(1.0, BORDER), egui::StrokeKind::Inside);
 }
 
-impl Lookout {
+impl Glint {
     /// The desktop icon theme's icon for a result, when the theme has one.
     fn system_icon(&mut self, item: &Item) -> Option<std::path::PathBuf> {
         match item {
@@ -42,7 +43,8 @@ impl Lookout {
                 self.icons.first(&["accessories-calculator", "org.kde.kcalc", "org.gnome.Calculator"])
             }
             Item::Define(_) => self.icons.first(&["accessories-dictionary", "org.gnome.Dictionary"]),
-            Item::Web(_) => self.icons.first(&["system-search", "internet-web-browser", "edit-find"]),
+            Item::Web(_) => self.icons.first(&["google-chrome", "chromium", "firefox", "internet-web-browser", "system-search", "edit-find"]),
+            Item::WebQuery(_) => None,
         }
     }
 
@@ -54,6 +56,7 @@ impl Lookout {
         // Painted stand-ins for when the theme lacks an icon.
         let p = ui.painter();
         match item {
+            Item::WebQuery(_) => magnifier(p, rect, MUTED),
             Item::App(i) => {
                 let name = &self.apps[*i].name;
                 let letter = name.chars().next().unwrap_or('?').to_uppercase().to_string();
@@ -87,6 +90,7 @@ impl Lookout {
             Item::PendingRates => "Converting…".into(),
             Item::Define(w) => w.clone(),
             Item::Web(q) => q.clone(),
+            Item::WebQuery(q) => q.clone(),
         }
     }
 
@@ -120,7 +124,7 @@ impl Lookout {
                 Some(Fetch::Loading) => "Looking it up…".into(),
                 None => "Select to look up the definition".into(),
             },
-            Item::Web(_) => String::new(),
+            Item::Web(_) | Item::WebQuery(_) => String::new(),
         }
     }
 
@@ -146,14 +150,14 @@ impl Lookout {
                 let inner = if card { rect.shrink2(Vec2::new(12.0, 5.0)) } else { rect.shrink2(Vec2::new(10.0, 1.0)) };
                 let p = ui.painter();
                 if card {
-                    p.rect_filled(inner, 10, if selected { SEL_FILL } else { CARD_FILL });
-                    p.rect_stroke(inner, 10, Stroke::new(1.0, if selected { SEL_STROKE } else { HAIRLINE }), egui::StrokeKind::Inside);
+                    p.rect_filled(inner, 12, if selected { SEL_FILL } else { CARD_FILL });
+                    p.rect_stroke(inner, 12, Stroke::new(1.0, if selected { SEL_STROKE } else { CARD_STROKE }), egui::StrokeKind::Inside);
                 } else if selected {
-                    p.rect_filled(inner, 7, SEL_FILL);
-                    p.rect_stroke(inner, 7, Stroke::new(1.0, SEL_STROKE), egui::StrokeKind::Inside);
+                    p.rect_filled(inner, 8, SEL_FILL);
+                    p.rect_stroke(inner, 8, Stroke::new(1.0, SEL_STROKE), egui::StrokeKind::Inside);
                 } else {
                     if resp.hovered() {
-                        p.rect_filled(inner, 7, CARD_FILL);
+                        p.rect_filled(inner, 8, CARD_FILL);
                     }
                     let prev_selected = i > 0 && i - 1 == self.sel;
                     if !first_in_section && !prev_selected && row.cat != Cat::Web {
@@ -167,7 +171,7 @@ impl Lookout {
                 };
                 let icon = Rect::from_center_size(Pos2::new(inner.left() + 10.0 + icon_size / 2.0, inner.center().y), Vec2::splat(icon_size));
                 self.icon(ui, icon, &row.item);
-                if row.cat == Cat::Web {
+                if row.cat == Cat::Web && matches!(row.item, Item::Web(_)) {
                     let arrow = Pos2::new(inner.right() - 12.0, inner.center().y);
                     ui.painter().text(arrow, egui::Align2::CENTER_CENTER, "↗", FontId::proportional(13.0), MUTED);
                 }
@@ -211,7 +215,7 @@ impl Lookout {
         p.text(Pos2::new(inner.left(), base), egui::Align2::LEFT_BOTTOM, cat.title(), FontId::proportional(13.0), HEAD);
         p.hline(inner.x_range(), inner.bottom() - 2.0, Stroke::new(1.0, HAIRLINE));
         if self.more.contains(&cat) {
-            let label = "Show More ↗";
+            let label = "Show More ⇲";
             let galley = p.layout_no_wrap(label.into(), FontId::proportional(12.5), HEAD);
             let r = Rect::from_min_size(Pos2::new(inner.right() - galley.size().x, base - galley.size().y), galley.size());
             let resp = ui.interact(r.expand(4.0), ui.scope_id().with(("show-more", cat)), Sense::click());
@@ -337,6 +341,12 @@ impl Lookout {
                 let hint = "Press Enter (or Ctrl+B from anywhere) to search the web in your browser.";
                 ui.add(Label::new(text(hint, 13.0, FG)).wrap());
             }
+            Item::WebQuery(q) => {
+                self.header(ui, &row.item, &format!("“{q}”"), "Search suggestion");
+                ui.add_space(10.0);
+                let hint = "Press Enter to search the web for this query in your browser.";
+                ui.add(Label::new(text(hint, 13.0, FG)).wrap());
+            }
         }
     }
 
@@ -431,14 +441,18 @@ pub fn magnifier(p: &egui::Painter, r: Rect, color: Color32) {
 
 fn folder(p: &egui::Painter, r: Rect) {
     let s = r.width();
-    let back = Color32::from_rgb(60, 140, 230);
-    let front = Color32::from_rgb(98, 173, 247);
-    let round = CornerRadius::same((s * 0.07) as u8);
-    let tab = Rect::from_min_size(r.min + Vec2::new(s * 0.05, s * 0.14), Vec2::new(s * 0.4, s * 0.2));
+    let back = Color32::from_rgb(46, 128, 222);
+    let front = Color32::from_rgb(86, 180, 252);
+    let front_highlight = Color32::from_rgb(118, 202, 255);
+    let round = CornerRadius::same((s * 0.10) as u8);
+    let tab = Rect::from_min_size(r.min + Vec2::new(s * 0.06, s * 0.12), Vec2::new(s * 0.42, s * 0.22));
     p.rect_filled(tab, round, back);
-    let body = Rect::from_min_max(r.min + Vec2::new(s * 0.05, s * 0.24), r.max - Vec2::new(s * 0.05, s * 0.12));
+    let body = Rect::from_min_max(r.min + Vec2::new(s * 0.06, s * 0.22), r.max - Vec2::new(s * 0.06, s * 0.10));
     p.rect_filled(body, round, back);
-    p.rect_filled(Rect::from_min_max(body.min + Vec2::new(0.0, s * 0.1), body.max), round, front);
+    let front_rect = Rect::from_min_max(body.min + Vec2::new(0.0, s * 0.11), body.max);
+    p.rect_filled(front_rect, round, front);
+    let top_edge = Rect::from_min_size(front_rect.min, Vec2::new(front_rect.width(), (s * 0.04).max(1.0)));
+    p.rect_filled(top_edge, CornerRadius { nw: round.nw, ne: round.ne, sw: 0, se: 0 }, front_highlight);
 }
 
 fn page(p: &egui::Painter, r: Rect, accent: Color32, ext: &str) {

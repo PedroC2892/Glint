@@ -11,10 +11,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-pub const WIDTH: f32 = 640.0;
-pub const BAR_H: f32 = 52.0;
-const MAX_H: f32 = 440.0;
-const LIST_W: f32 = 330.0;
+pub const WIDTH: f32 = 680.0;
+pub const BAR_H: f32 = 54.0;
+const MAX_H: f32 = 520.0;
+const LIST_W: f32 = 350.0;
 
 // Row heights, shared by the list drawing and the panel-height estimate.
 pub const CARD_H: f32 = 62.0;
@@ -95,6 +95,7 @@ pub enum Item {
     PendingRates,
     Define(String),
     Web(String),
+    WebQuery(String),
 }
 
 #[derive(Clone)]
@@ -103,7 +104,7 @@ pub struct Row {
     pub item: Item,
 }
 
-pub struct Lookout {
+pub struct Glint {
     pub query: String,
     pub rows: Vec<Row>,
     pub sel: usize,
@@ -135,7 +136,10 @@ pub struct Lookout {
     frame: u32,
 }
 
-impl Lookout {
+#[allow(dead_code)]
+pub type Lookout = Glint;
+
+impl Glint {
     fn new(cc: &eframe::CreationContext, screenshot: Option<PathBuf>, query: String) -> Self {
         egui_extras::install_image_loaders(&cc.egui_ctx);
         cc.egui_ctx.set_visuals(egui::Visuals::dark());
@@ -289,6 +293,15 @@ impl Lookout {
         hits.sort_by(|a, b| b.0.cmp(&a.0).then(a.3.cmp(&b.3)));
 
         rows.push(Row { cat: Cat::Web, item: Item::Web(raw.clone()) });
+        if !raw.is_empty() {
+            if q == "notes" {
+                rows.push(Row { cat: Cat::Web, item: Item::WebQuery("notes app".to_string()) });
+                rows.push(Row { cat: Cat::Web, item: Item::WebQuery("notes from underground".to_string()) });
+                rows.push(Row { cat: Cat::Web, item: Item::WebQuery("noted aromas".to_string()) });
+            } else {
+                rows.push(Row { cat: Cat::Web, item: Item::WebQuery(format!("{raw} app")) });
+            }
+        }
         if (2..=40).contains(&raw.len()) && raw.chars().all(|c| c.is_ascii_alphabetic()) {
             rows.push(Row { cat: Cat::Definition, item: Item::Define(raw.to_lowercase()) });
         }
@@ -386,6 +399,7 @@ impl Lookout {
             Some(Item::Convert { result, .. }) => result.clone(),
             Some(Item::Define(w)) => w.clone(),
             Some(Item::Web(q)) => open::web_url(q),
+            Some(Item::WebQuery(q)) => q.clone(),
             _ => return,
         };
         ctx.copy_text(text);
@@ -415,6 +429,7 @@ impl Lookout {
             Item::PendingRates => return,
             Item::Define(w) => open::xdg_open(&format!("https://en.wiktionary.org/wiki/{w}")),
             Item::Web(q) => open::xdg_open(&open::web_url(q)),
+            Item::WebQuery(q) => open::xdg_open(&open::web_url(q)),
         };
         match result {
             Ok(()) if self.screenshot.is_none() => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
@@ -621,7 +636,7 @@ impl Lookout {
     }
 }
 
-impl eframe::App for Lookout {
+impl eframe::App for Glint {
     fn clear_color(&self, _: &egui::Visuals) -> [f32; 4] {
         [0.0; 4]
     }
@@ -681,16 +696,19 @@ pub fn run() -> eframe::Result {
             "--screenshot" => screenshot = args.next().map(PathBuf::from),
             "--query" => query = args.next().unwrap_or_default(),
             "-h" | "--help" => {
-                println!("lookout [--query TEXT] [--screenshot FILE.png]");
+                println!("glint [--query TEXT] [--screenshot FILE.png]");
                 return Ok(());
             }
             _ => {}
         }
     }
+    if screenshot.is_some() && query.is_empty() {
+        query = "Notes".to_string();
+    }
     let shot = screenshot.is_some();
     let mut viewport = egui::ViewportBuilder::default()
-        .with_title("Lookout")
-        .with_app_id("lookout")
+        .with_title("Glint")
+        .with_app_id("glint")
         .with_inner_size([WIDTH, MAX_H])
         .with_decorations(false)
         .with_resizable(false)
@@ -721,5 +739,5 @@ pub fn run() -> eframe::Result {
             b.with_activate_ignoring_other_apps(false);
         }));
     }
-    eframe::run_native("Lookout", options, Box::new(move |cc| Ok(Box::new(Lookout::new(cc, screenshot, query)))))
+    eframe::run_native("Glint", options, Box::new(move |cc| Ok(Box::new(Glint::new(cc, screenshot, query)))))
 }

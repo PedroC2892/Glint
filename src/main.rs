@@ -1,4 +1,4 @@
-//! Lookout: a keyboard-driven search launcher for the Linux desktop.
+//! Glint: a keyboard-driven search launcher for the Linux desktop.
 //!
 //! Finds applications, settings panels and files, does maths and unit or
 //! currency conversion, looks up definitions and hands anything else to a

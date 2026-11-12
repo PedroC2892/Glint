@@ -1,8 +1,8 @@
-# Lookout
+# Glint
 
 A fast, keyboard-driven search launcher for the Linux desktop, inspired by the
-system-wide search bar found on macOS Sequoia. Press a shortcut, start typing,
-press Enter.
+system-wide search bar found on macOS Sequoia. Press a shortcut (`Win + Space`),
+start typing, press Enter.
 
 Built with Rust and [egui](https://github.com/emilk/egui)/eframe.
 
@@ -14,14 +14,15 @@ Built with Rust and [egui](https://github.com/emilk/egui)/eframe.
   (hidden folders, `node_modules`, `target` and similar are skipped), grouped
   into Documents, Folders, Images, Music, Movies and Other Files, each showing
   its kind and last-modified date.
-- **Top hit** – the best match is shown first; things you open often rank higher.
+- **Top hit** – the best match is shown first in a highlighted card; things you open often rank higher.
+- **Suggestions** – web searches and query completions directly accessible from the search results.
 - **Calculator** – `12*(3+4)`, `2^10`, `sqrt(2)`, `2pi`, `sin(1)`…
 - **Unit conversion** – length, mass, volume, time, data, speed, area and
   temperature: `10 km to mi`, `100 f in c`, `5 ft`.
 - **Currency conversion** – `100 usd to eur`, `$20`, `€15 in gbp`, using
   today's exchange rates.
-- **Definitions** – English word definitions.
-- **Web search** – any query can be sent to your browser.
+- **Definitions** – English word definitions from Wiktionary / Dictionary API.
+- **Web search** – any query can be sent directly to your browser.
 - **Preview** – press `Ctrl+Y` for a side preview with file details, a text
   snippet or an image.
 - **System icons** – every result uses your desktop's icon theme (KDE or
@@ -43,15 +44,28 @@ Built with Rust and [egui](https://github.com/emilk/egui)/eframe.
 | `Ctrl+Y` | Toggle the preview |
 | `Esc` | Clear the search, then close |
 
-Clicking outside the panel, or switching to another window, closes Lookout.
+Clicking outside the panel, or switching to another window, closes Glint.
 
-## Build and run
+## Launching with a Keyboard Shortcut (Win + Space)
+
+Glint is designed to be summoned instantly with **Win + Space** (Super + Space):
+
+1. **Automatic setup**: `./install.sh` automatically registers `Win + Space` / `Meta + Space`:
+   - On **KDE Plasma**: registered via `X-KDE-Shortcuts=Meta+Space` in the desktop entry.
+   - On **GNOME**: registered via `gsettings` custom media-keys keybinding.
+2. **Manual setup in any desktop environment / Window Manager**:
+   - Command: `~/.local/bin/glint`
+   - Shortcut: `Super+Space` (or `Mod4+space`)
+   - **Xfce**: *Settings → Keyboard → Application Shortcuts* → Add `~/.local/bin/glint` with `Super+Space`.
+   - **i3 / Sway**: Add `bindsym $mod+space exec ~/.local/bin/glint` to your config.
+
+## Build and Run
 
 Requires a recent stable Rust toolchain (edition 2024).
 
 ```sh
 cargo build --release
-./target/release/lookout
+./target/release/glint
 ```
 
 Options:
@@ -65,14 +79,12 @@ Run the tests with `cargo test`.
 ## Install
 
 ```sh
-./install.sh             # build, then install for the current user
+./install.sh             # build, then install for the current user and set up shortcuts
 ./install.sh --uninstall # remove it again
 ```
 
 The script needs no root access. It installs the binary to `~/.local/bin`, plus
-a menu entry and an icon under `$XDG_DATA_HOME` (default `~/.local/share`). On
-KDE Plasma it asks for the `Meta+Space` shortcut. On other desktops, bind a
-shortcut of your choice to `~/.local/bin/lookout` in your keyboard settings.
+a menu entry and an icon under `$XDG_DATA_HOME` (default `~/.local/share`).
 
 ## Privacy
 
@@ -87,26 +99,25 @@ HTTPS:
 
 Web searches open [DuckDuckGo](https://duckduckgo.com) in your browser.
 Usage counts that improve ranking are stored locally in
-`~/.local/share/lookout/history.tsv`.
+`~/.local/share/glint/history.tsv`.
 
-## Performance notes
+## Performance Notes
 
 - The file index is built in a background thread. While it fills up, results
   refresh at most twice a second.
 - Scoring a name allocates nothing, and only the results that can be shown are
   kept, so a keystroke over ~150,000 files takes a few tens of milliseconds.
-- Lookout asks for the low-power GPU, so laptops with two GPUs don't wake
+- Glint asks for the low-power GPU, so laptops with two GPUs don't wake
   the discrete one for a small panel. Set `WGPU_POWER_PREF=high` to override.
 - Dependencies are optimised even in debug builds.
 
-## Platform notes
+## Platform Notes
 
-Developed and tested on Linux with KDE Plasma on X11. On X11, Lookout asks the
+Developed and tested on Linux with KDE Plasma and GNOME on X11 and Wayland. On X11, Glint asks the
 window manager for keyboard focus the way a taskbar does, so it works even with
-focus-stealing prevention. Wayland and other desktops should work but are less
-tested.
+focus-stealing prevention.
 
-## Project layout
+## Project Layout
 
 | File | Purpose |
 | --- | --- |
@@ -118,5 +129,5 @@ tested.
 | `src/calc.rs` | Calculator, unit and currency conversion |
 | `src/open.rs` | Launching apps and files, online lookups |
 | `src/x11focus.rs` | Keyboard focus on X11 |
-| `assets/lookout.svg` | App icon |
-| `install.sh` | Per-user installer |
+| `assets/glint.svg` | App icon |
+| `install.sh` | Per-user installer and shortcut configurator |
