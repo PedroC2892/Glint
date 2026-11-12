@@ -42,7 +42,7 @@ pub fn data_home() -> PathBuf {
 }
 
 /// $XDG_DATA_HOME first, then $XDG_DATA_DIRS, as the XDG spec orders them.
-fn data_dirs() -> Vec<PathBuf> {
+pub fn data_dirs() -> Vec<PathBuf> {
     let dirs = std::env::var("XDG_DATA_DIRS")
         .ok()
         .filter(|s| !s.is_empty())
@@ -139,44 +139,6 @@ fn parse_desktop(path: &Path, id: String, desktops: &[String]) -> Option<AppEntr
         settings,
         path: path.to_path_buf(),
     })
-}
-
-/// Look an icon name up in the common themes.
-// ponytail: fixed theme list, no index.theme inheritance; parse the active
-// theme's index.theme if icons go missing on some desktops.
-pub fn find_icon(name: &str) -> Option<PathBuf> {
-    if name.is_empty() {
-        return None;
-    }
-    let p = Path::new(name);
-    if p.is_absolute() {
-        return p.is_file().then(|| p.to_path_buf());
-    }
-    let mut bases: Vec<PathBuf> = vec![home().join(".icons")];
-    bases.extend(data_dirs().into_iter().map(|d| d.join("icons")));
-    for base in &bases {
-        for theme in ["hicolor", "Adwaita", "Papirus", "breeze", "Yaru"] {
-            for size in ["scalable", "256x256", "128x128", "96x96", "64x64", "48x48", "32x32"] {
-                // Freedesktop layout is <size>/<context>; Breeze uses <context>/<size>.
-                let n = size.split('x').next().unwrap_or(size);
-                for context in ["apps", "preferences", "categories"] {
-                    let t = base.join(theme);
-                    for dir in [t.join(size).join(context), t.join(context).join(n)] {
-                        for ext in ["svg", "png"] {
-                            let f = dir.join(format!("{name}.{ext}"));
-                            if f.is_file() {
-                                return Some(f);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    ["svg", "png"]
-        .iter()
-        .map(|ext| PathBuf::from(format!("/usr/share/pixmaps/{name}.{ext}")))
-        .find(|f| f.is_file())
 }
 
 const SKIP_DIRS: &[&str] = &["node_modules", "target", "__pycache__", "venv", "site-packages", "snap"];

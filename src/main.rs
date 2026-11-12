@@ -6,6 +6,7 @@
 
 mod calc;
 mod draw;
+mod icons;
 mod index;
 mod open;
 mod ui;

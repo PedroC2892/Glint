@@ -24,6 +24,10 @@ Built with Rust and [egui](https://github.com/emilk/egui)/eframe.
 - **Web search** – any query can be sent to your browser.
 - **Preview** – press `Ctrl+Y` for a side preview with file details, a text
   snippet or an image.
+- **System icons** – every result uses your desktop's icon theme (KDE or
+  GNOME setting, following the theme's `Inherits=` chain down to `hicolor`).
+  File icons are picked by file type from the shared MIME database, the same
+  way your file manager does it.
 
 ## Keyboard
 
@@ -109,7 +113,8 @@ tested.
 | `src/main.rs` | Entry point |
 | `src/ui.rs` | Window, search logic, keyboard handling |
 | `src/draw.rs` | Result list, preview and icon drawing |
-| `src/index.rs` | Apps, icons, file index, history, dates |
+| `src/index.rs` | Apps, file index, history, dates |
+| `src/icons.rs` | Desktop icon theme and file-type icons |
 | `src/calc.rs` | Calculator, unit and currency conversion |
 | `src/open.rs` | Launching apps and files, online lookups |
 | `src/x11focus.rs` | Keyboard focus on X11 |

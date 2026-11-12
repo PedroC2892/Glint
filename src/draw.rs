@@ -7,17 +7,17 @@ use crate::ui::{Cat, Item, Lookout};
 use eframe::egui::{self, Color32, CornerRadius, FontId, Label, Pos2, Rect, RichText, ScrollArea, Sense, Stroke, Vec2};
 use std::path::Path;
 
-// Slate-blue glass, light text (colours are premultiplied where translucent).
-pub const BG: Color32 = Color32::from_rgba_premultiplied(40, 45, 60, 242);
-pub const BORDER: Color32 = Color32::from_rgba_premultiplied(48, 48, 48, 48);
-pub const FG: Color32 = Color32::from_rgb(242, 244, 248);
-pub const MUTED: Color32 = Color32::from_rgb(168, 174, 188);
+// Black glass, light text (colours are premultiplied where translucent).
+pub const BG: Color32 = Color32::from_rgba_premultiplied(0, 0, 0, 245);
+pub const BORDER: Color32 = Color32::from_rgba_premultiplied(44, 44, 44, 44);
+pub const FG: Color32 = Color32::from_rgb(242, 242, 244);
+pub const MUTED: Color32 = Color32::from_rgb(160, 160, 166);
 pub const ACCENT: Color32 = Color32::from_rgb(10, 100, 220);
 pub const HAIRLINE: Color32 = Color32::from_rgba_premultiplied(30, 30, 30, 30);
-const SEL_FILL: Color32 = Color32::from_rgba_premultiplied(30, 32, 36, 34);
-const SEL_STROKE: Color32 = Color32::from_rgba_premultiplied(62, 62, 62, 62);
-const CARD_FILL: Color32 = Color32::from_rgba_premultiplied(14, 15, 18, 16);
-const HEAD: Color32 = Color32::from_rgb(196, 201, 212);
+const SEL_FILL: Color32 = Color32::from_rgba_premultiplied(36, 36, 38, 38);
+const SEL_STROKE: Color32 = Color32::from_rgba_premultiplied(60, 60, 60, 60);
+const CARD_FILL: Color32 = Color32::from_rgba_premultiplied(16, 16, 16, 16);
+const HEAD: Color32 = Color32::from_rgb(190, 190, 196);
 
 fn text(t: impl Into<String>, size: f32, color: Color32) -> RichText {
     RichText::new(t).size(size).color(color)
@@ -33,21 +33,31 @@ pub fn panel(p: &egui::Painter, r: Rect) {
 }
 
 impl Lookout {
+    /// The desktop icon theme's icon for a result, when the theme has one.
+    fn system_icon(&mut self, item: &Item) -> Option<std::path::PathBuf> {
+        match item {
+            Item::App(i) => self.icons.lookup(&self.apps[*i].icon),
+            Item::File(path, is_dir) => self.icons.for_file(path, *is_dir),
+            Item::Calc { .. } | Item::Convert { .. } | Item::PendingRates => {
+                self.icons.first(&["accessories-calculator", "org.kde.kcalc", "org.gnome.Calculator"])
+            }
+            Item::Define(_) => self.icons.first(&["accessories-dictionary", "org.gnome.Dictionary"]),
+            Item::Web(_) => self.icons.first(&["system-search", "internet-web-browser", "edit-find"]),
+        }
+    }
+
     fn icon(&mut self, ui: &egui::Ui, rect: Rect, item: &Item) {
+        if let Some(path) = self.system_icon(item) {
+            egui::Image::new(format!("file://{}", path.display())).paint_at(ui, rect);
+            return;
+        }
+        // Painted stand-ins for when the theme lacks an icon.
         let p = ui.painter();
         match item {
             Item::App(i) => {
-                let i = *i;
-                let apps = &self.apps;
-                let path = self.icons.entry(i).or_insert_with(|| index::find_icon(&apps[i].icon)).clone();
-                match path {
-                    Some(path) => egui::Image::new(format!("file://{}", path.display())).paint_at(ui, rect),
-                    None => {
-                        let name = &self.apps[i].name;
-                        let letter = name.chars().next().unwrap_or('?').to_uppercase().to_string();
-                        tile(p, rect, letter_color(name), &letter);
-                    }
-                }
+                let name = &self.apps[*i].name;
+                let letter = name.chars().next().unwrap_or('?').to_uppercase().to_string();
+                tile(p, rect, letter_color(name), &letter);
             }
             Item::File(_, true) => folder(p, rect),
             Item::File(path, false) => {
@@ -152,16 +162,14 @@ impl Lookout {
                 }
                 let icon_size = match row.cat {
                     _ if card => 34.0,
-                    Cat::Web => 16.0,
+                    Cat::Web => 20.0,
                     _ => 28.0,
                 };
                 let icon = Rect::from_center_size(Pos2::new(inner.left() + 10.0 + icon_size / 2.0, inner.center().y), Vec2::splat(icon_size));
+                self.icon(ui, icon, &row.item);
                 if row.cat == Cat::Web {
-                    magnifier(ui.painter(), icon.shrink(1.0), MUTED);
                     let arrow = Pos2::new(inner.right() - 12.0, inner.center().y);
                     ui.painter().text(arrow, egui::Align2::CENTER_CENTER, "↗", FontId::proportional(13.0), MUTED);
-                } else {
-                    self.icon(ui, icon, &row.item);
                 }
                 let right = inner.right() - if row.cat == Cat::Web { 28.0 } else { 10.0 };
                 let text_rect = Rect::from_min_max(Pos2::new(icon.right() + 11.0, inner.top()), Pos2::new(right, inner.bottom()));
