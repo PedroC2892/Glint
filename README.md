@@ -109,6 +109,8 @@ Run the tests with `cargo test`.
 
 The script needs no root access. It installs the binary to `~/.local/bin`, plus
 a menu entry and an icon under `$XDG_DATA_HOME` (default `~/.local/share`).
+`install.sh` uses the `local` profile (no LTO, incremental) so reinstalls after
+a code change take seconds, while `cargo build --release` produces the LTO build.
 
 ## Privacy
 

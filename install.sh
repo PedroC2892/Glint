@@ -1,7 +1,7 @@
 #!/bin/sh
 # Install Glint for the current user (no root needed).
 #
-#   ./install.sh              build, then install binary, menu entry, icon suite and Super+Space shortcut
+#   ./install.sh              build (profile 'local'), then install binary, menu entry, icon suite and Super+Space shortcut
 #   ./install.sh --uninstall  remove everything this script installed
 #
 # Paths follow the XDG Base Directory spec: $XDG_DATA_HOME (default
@@ -10,6 +10,11 @@ set -eu
 
 APP_ID=glint
 REPO_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+TARGET_DIR=${CARGO_TARGET_DIR:-"$REPO_DIR/target"}
+case $TARGET_DIR in
+    /*) ;;
+    *) TARGET_DIR="$PWD/$TARGET_DIR" ;;
+esac
 DATA_HOME=${XDG_DATA_HOME:-"$HOME/.local/share"}
 case $DATA_HOME in /*) ;; *) DATA_HOME="$HOME/.local/share" ;; esac
 BIN_DIR="$HOME/.local/bin"
@@ -61,18 +66,23 @@ if [ -n "${1:-}" ]; then
     exit 2
 fi
 
-# 1. Build (or reuse an existing release binary when cargo is missing).
+# 1. Build (or reuse an existing local or release binary when cargo is missing).
 if have cargo; then
-    echo "Building Glint (release)…"
-    cargo build --release --manifest-path "$REPO_DIR/Cargo.toml"
-elif [ ! -x "$REPO_DIR/target/release/$APP_ID" ]; then
+    echo "Building Glint (local)…"
+    cargo build --profile local --manifest-path "$REPO_DIR/Cargo.toml"
+    BIN_SRC="$TARGET_DIR/local/$APP_ID"
+elif [ -f "$TARGET_DIR/local/$APP_ID" ]; then
+    BIN_SRC="$TARGET_DIR/local/$APP_ID"
+elif [ -f "$TARGET_DIR/release/$APP_ID" ]; then
+    BIN_SRC="$TARGET_DIR/release/$APP_ID"
+else
     echo "cargo was not found and no built binary exists; install Rust from https://rustup.rs first." >&2
     exit 1
 fi
 
 # 2. Binary.
 mkdir -p "$BIN_DIR"
-install -m 755 "$REPO_DIR/target/release/$APP_ID" "$BIN_DIR/$APP_ID"
+install -m 755 "$BIN_SRC" "$BIN_DIR/$APP_ID"
 
 # 3. Icon: SVG + PNG suite + pixmaps.
 # We install to ~/.icons/hicolor (user icon theme), ~/.local/share/icons/hicolor (if writable),
