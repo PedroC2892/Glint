@@ -12,9 +12,9 @@ pub const FG: Color32 = Color32::from_rgb(245, 245, 248);
 pub const MUTED: Color32 = Color32::from_rgb(155, 155, 162);
 pub const LOC_COLOR: Color32 = Color32::from_rgb(125, 125, 134);
 pub const HAIRLINE: Color32 = Color32::from_rgba_premultiplied(32, 32, 35, 55);
-const SEL_FILL: Color32 = Color32::from_rgba_premultiplied(45, 45, 50, 145);
-const CARD_FILL: Color32 = Color32::from_rgba_premultiplied(26, 26, 30, 140);
-const CARD_STROKE: Color32 = Color32::from_rgba_premultiplied(60, 60, 68, 85);
+pub(crate) const SEL_FILL: Color32 = Color32::from_rgba_premultiplied(45, 45, 50, 145);
+pub(crate) const CARD_FILL: Color32 = Color32::from_rgba_premultiplied(26, 26, 30, 140);
+pub(crate) const CARD_STROKE: Color32 = Color32::from_rgba_premultiplied(60, 60, 68, 85);
 const HEAD: Color32 = Color32::from_rgb(170, 170, 178);
 
 #[derive(Clone, Copy, PartialEq, Debug)]

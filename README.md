@@ -97,6 +97,7 @@ Options:
 - `--settings` – open directly in settings view.
 - `--screenshot FILE.png` – draw about 120 frames, save the window as a PNG and
   exit, without taking keyboard focus (used for automated visual checks).
+- `--keys "Down,Down,Right"` – with `--screenshot`, inject these keys (Up, Down, Left, Right, Tab, Space, Enter, Escape), one per frame, to check keyboard navigation.
 
 Run the tests with `cargo test`.
 

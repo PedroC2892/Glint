@@ -5,7 +5,7 @@ use crate::config::{self, Settings};
 use crate::draw::{self, FG, HAIRLINE, MUTED};
 use crate::index::{self, AppEntry, FileEntry, FileInfo, Kind};
 use crate::open::{self, Definition, Fetch};
-use eframe::egui::{self, Align, FontId, Key, Layout, Modifiers, Pos2, Rect, RichText, ScrollArea, Sense, Stroke, UiBuilder, Vec2};
+use eframe::egui::{self, Align, FontId, Key, Layout, Modifiers, Pos2, Rect, RichText, Sense, Stroke, UiBuilder, Vec2};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -139,13 +139,19 @@ pub struct Glint {
     mode: Mode,
     pub settings: Settings,
     /// Settings when the page was opened, to tell whether a re-index is needed.
-    index_snapshot: Settings,
+    pub(crate) index_snapshot: Settings,
     cancel: Arc<AtomicBool>,
-    new_root: String,
+    pub(crate) new_root: String,
     /// Time of the last change not yet written to disk.
-    settings_dirty: Option<f64>,
-    /// Put keyboard focus on the selected swatch when the page next draws.
-    focus_swatch: bool,
+    pub(crate) settings_dirty: Option<f64>,
+    /// Focused row of the settings page (index into the visible rows).
+    pub(crate) settings_row: usize,
+    /// Scroll the focused row into view on the next draw.
+    pub(crate) scroll_row: bool,
+    /// Text of the custom colour field.
+    pub(crate) hex: String,
+    /// Keys to inject in screenshot mode, one per frame from frame 20.
+    key_script: Vec<Key>,
     pub files: Arc<Mutex<Vec<FileEntry>>>,
     pub files_done: Arc<AtomicBool>,
     seen_files: usize,
@@ -198,7 +204,10 @@ impl Glint {
             cancel: Arc::new(AtomicBool::new(false)),
             new_root: String::new(),
             settings_dirty: None,
-            focus_swatch: false,
+            settings_row: 0,
+            scroll_row: false,
+            hex: String::new(),
+            key_script: Vec::new(),
             files: Arc::new(Mutex::new(Vec::new())),
             files_done: Arc::new(AtomicBool::new(false)),
             seen_files: 0,
@@ -250,7 +259,7 @@ impl Glint {
         std::thread::spawn(move || index::index_files(opts, f, d, cancel, move || c.request_repaint()));
     }
 
-    fn restyle(&mut self, ctx: &egui::Context) {
+    pub(crate) fn restyle(&mut self, ctx: &egui::Context) {
         self.theme = draw::Theme::new(self.settings.accent, self.settings.opacity);
         draw::apply_accent(ctx, self.theme.accent);
     }
@@ -259,7 +268,8 @@ impl Glint {
         self.index_snapshot = self.settings.clone();
         self.show_preview = false;
         self.mode = Mode::Settings;
-        self.focus_swatch = true;
+        self.settings_row = 0;
+        self.scroll_row = true;
     }
 
     fn save_settings(&mut self, ctx: &egui::Context) {
@@ -479,7 +489,7 @@ impl Glint {
         index::save_history(&self.history);
     }
 
-    fn toast(&mut self, ctx: &egui::Context, msg: &str) {
+    pub(crate) fn toast(&mut self, ctx: &egui::Context, msg: &str) {
         self.toast = Some((msg.to_string(), ctx.input(|i| i.time) + 2.0));
     }
 
@@ -558,6 +568,8 @@ impl Glint {
         if self.mode == Mode::Settings {
             if toggle || esc {
                 self.leave_settings(ctx);
+            } else if !popup {
+                self.settings_keys(ctx);
             }
             return;
         }
@@ -739,176 +751,6 @@ impl Glint {
         });
     }
 
-    fn settings_heading(ui: &mut egui::Ui, title: &str) {
-        ui.add_space(12.0);
-        ui.label(RichText::new(title.to_uppercase()).size(11.0).strong().color(MUTED));
-        ui.add_space(2.0);
-    }
-
-    /// Accent ring around the control that has keyboard focus, kept in view.
-    fn focus_ring(ui: &egui::Ui, r: &egui::Response, accent: egui::Color32) {
-        if r.has_focus() {
-            ui.painter().rect_stroke(r.rect.expand(2.0), 5, Stroke::new(2.0, accent), egui::StrokeKind::Outside);
-        }
-        if r.gained_focus() {
-            r.scroll_to_me(None);
-        }
-    }
-
-    fn settings_note(ui: &mut egui::Ui, note: &str) {
-        ui.add(egui::Label::new(RichText::new(note).size(11.5).color(MUTED)).wrap());
-    }
-
-    /// The settings page: title bar plus a scrolling body. Every change marks the
-    /// settings dirty; the write to disk is debounced in `window_logic`.
-    fn settings_page(&mut self, ui: &mut egui::Ui) {
-        let ctx = ui.ctx().clone();
-        let full = ui.max_rect();
-        ui.allocate_ui_with_layout(Vec2::new(full.width(), BAR_H), Layout::left_to_right(Align::Center), |ui| {
-            ui.add_space(16.0);
-            ui.label(RichText::new("Glint Settings").size(20.0).color(FG));
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.add_space(16.0);
-                ui.label(RichText::new("Esc to go back").size(12.5).color(MUTED));
-            });
-        });
-        ui.painter().hline(full.x_range(), full.top() + BAR_H, Stroke::new(1.0, HAIRLINE));
-        let body = Rect::from_min_max(
-            Pos2::new(full.left() + 16.0, full.top() + BAR_H + 1.0),
-            Pos2::new(full.right() - 16.0, full.bottom() - 10.0),
-        );
-        let (mut changed, mut restyle) = (false, false);
-        let mut msgs: Vec<String> = Vec::new();
-        ui.scope_builder(UiBuilder::new().max_rect(body), |ui| {
-            ui.set_clip_rect(body);
-            ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-                ui.spacing_mut().item_spacing.y = 7.0;
-                let st = &mut self.settings;
-                let accent = self.theme.accent;
-                let first_focus = std::mem::take(&mut self.focus_swatch);
-                let sel_swatch = draw::ACCENT_PRESETS.iter().position(|(_, c)| *c == st.accent).unwrap_or(0);
-
-                Self::settings_heading(ui, "Appearance");
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 8.0;
-                    for (n, (name, rgb)) in draw::ACCENT_PRESETS.iter().enumerate() {
-                        let (r, resp) = ui.allocate_exact_size(Vec2::splat(28.0), Sense::click());
-                        if first_focus && n == sel_swatch {
-                            resp.request_focus();
-                        }
-                        let p = ui.painter();
-                        p.circle_filled(r.center(), 9.5, egui::Color32::from_rgb(rgb[0], rgb[1], rgb[2]));
-                        if st.accent == *rgb {
-                            p.circle_stroke(r.center(), 12.0, Stroke::new(2.0, egui::Color32::WHITE));
-                        }
-                        if resp.has_focus() {
-                            p.circle_stroke(r.center(), 14.5, Stroke::new(2.0, accent));
-                        }
-                        if resp.gained_focus() {
-                            resp.scroll_to_me(None);
-                        }
-                        if resp.on_hover_text(*name).clicked() {
-                            st.accent = *rgb;
-                            (changed, restyle) = (true, true);
-                        }
-                    }
-                });
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new("Custom colour").size(13.5).color(FG));
-                    let r = ui.color_edit_button_srgb(&mut st.accent);
-                    Self::focus_ring(ui, &r, accent);
-                    if r.changed() {
-                        (changed, restyle) = (true, true);
-                    }
-                });
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new("Opacity").size(13.5).color(FG));
-                    // Arrow keys step 5%.
-                    let slider = egui::Slider::new(&mut st.opacity, 0.5..=1.0)
-                        .step_by(0.05)
-                        .custom_formatter(|v, _| format!("{:.0}%", v * 100.0))
-                        .custom_parser(|t| t.trim().trim_end_matches('%').parse::<f64>().ok().map(|v| v / 100.0));
-                    let r = ui.add(slider);
-                    Self::focus_ring(ui, &r, accent);
-                    if r.changed() {
-                        (changed, restyle) = (true, true);
-                    }
-                });
-
-                Self::settings_heading(ui, "Files");
-                let r = ui.checkbox(&mut st.show_hidden, "Show hidden files and folders");
-                Self::focus_ring(ui, &r, accent);
-                changed |= r.changed();
-                Self::settings_note(ui, "Folders such as .ssh, .gnupg and .git are never indexed, and hidden files are never previewed.");
-                let r = ui.checkbox(&mut st.outside_home, "Index folders outside your home folder");
-                Self::focus_ring(ui, &r, accent);
-                changed |= r.changed();
-                if st.outside_home {
-                    let mut remove = None;
-                    for (i, root) in st.extra_roots.iter().enumerate() {
-                        ui.horizontal(|ui| {
-                            let r = ui.small_button("Remove");
-                            Self::focus_ring(ui, &r, accent);
-                            if r.clicked() {
-                                remove = Some(i);
-                            }
-                            ui.add(egui::Label::new(RichText::new(root.display().to_string()).size(12.5).color(FG)).truncate());
-                        });
-                    }
-                    if let Some(i) = remove {
-                        st.extra_roots.remove(i);
-                        changed = true;
-                    }
-                    // Field and button on separate rows, so Up/Down reach both.
-                    let edit = egui::TextEdit::singleline(&mut self.new_root).hint_text("/path/to/folder").desired_width(f32::INFINITY);
-                    let resp = ui.add(edit);
-                    Self::focus_ring(ui, &resp, accent);
-                    let enter = resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-                    let add = ui.button("Add");
-                    Self::focus_ring(ui, &add, accent);
-                    if (add.clicked() || enter) && !self.new_root.trim().is_empty() {
-                        match validate_root(&self.new_root, &st.extra_roots) {
-                            Ok(root) => {
-                                if root == Path::new("/") || root == Path::new("/usr") {
-                                    msgs.push("Indexing system folders is slow and fills the index".into());
-                                }
-                                st.extra_roots.push(root);
-                                self.new_root.clear();
-                                changed = true;
-                            }
-                            Err(e) => msgs.push(e),
-                        }
-                    }
-                    Self::settings_note(ui, "Folders you cannot read are skipped. Changes apply when you leave settings.");
-                }
-
-                Self::settings_heading(ui, "Search");
-                let r = ui.checkbox(&mut st.online, "Online lookups (definitions and exchange rates)");
-                Self::focus_ring(ui, &r, accent);
-                changed |= r.changed();
-
-                ui.add_space(14.0);
-                let r = ui.button("Reset to defaults");
-                Self::focus_ring(ui, &r, accent);
-                if r.clicked() {
-                    *st = Settings::default();
-                    (changed, restyle) = (true, true);
-                }
-                ui.add_space(6.0);
-            });
-        });
-        if changed {
-            self.settings.sanitize();
-            self.settings_dirty = Some(ctx.input(|i| i.time));
-        }
-        if restyle {
-            self.restyle(&ctx);
-        }
-        if let Some(m) = msgs.last() {
-            self.toast(&ctx, m);
-        }
-    }
-
     /// Short status (copied, indexing) in a pill at the bottom right.
     fn status(&self, ui: &egui::Ui, full: Rect) {
         let text = match &self.toast {
@@ -943,6 +785,13 @@ impl eframe::App for Glint {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        // Scripted keys (screenshot checks only), one per frame from frame 20.
+        if self.screenshot.is_some()
+            && let Some(&key) = self.frame.checked_sub(20).and_then(|i| self.key_script.get(i as usize))
+        {
+            let event = egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::NONE };
+            ctx.input_mut(|i| i.events.push(event));
+        }
         self.handle_keys(&ctx);
         self.window_logic(&ctx);
 
@@ -997,13 +846,15 @@ pub fn run() -> eframe::Result {
     let mut screenshot = None;
     let mut query = String::new();
     let mut open_settings = false;
+    let mut keys: Vec<Key> = Vec::new();
     while let Some(a) = args.next() {
         match a.as_str() {
             "--screenshot" => screenshot = args.next().map(PathBuf::from),
             "--settings" => open_settings = true,
+            "--keys" => keys = args.next().unwrap_or_default().split(',').filter_map(|k| parse_key(k.trim())).collect(),
             "--query" => query = args.next().unwrap_or_default(),
             "-h" | "--help" => {
-                println!("glint [--query TEXT] [--settings] [--screenshot FILE.png]");
+                println!("glint [--query TEXT] [--settings] [--screenshot FILE.png [--keys Down,Right,...]]");
                 return Ok(());
             }
             _ => {}
@@ -1048,6 +899,7 @@ pub fn run() -> eframe::Result {
     }
     eframe::run_native("Glint", options, Box::new(move |cc| {
         let mut app = Glint::new(cc, screenshot, query);
+        app.key_script = keys;
         if open_settings {
             app.enter_settings();
         }
@@ -1055,8 +907,23 @@ pub fn run() -> eframe::Result {
     }))
 }
 
+/// Key names accepted by `--keys`.
+fn parse_key(name: &str) -> Option<Key> {
+    Some(match name.to_ascii_lowercase().as_str() {
+        "up" => Key::ArrowUp,
+        "down" => Key::ArrowDown,
+        "left" => Key::ArrowLeft,
+        "right" => Key::ArrowRight,
+        "tab" => Key::Tab,
+        "space" => Key::Space,
+        "enter" => Key::Enter,
+        "escape" | "esc" => Key::Escape,
+        _ => return None,
+    })
+}
+
 /// Checks a folder typed into the settings page; returns its canonical path.
-fn validate_root(input: &str, existing: &[PathBuf]) -> Result<PathBuf, String> {
+pub(crate) fn validate_root(input: &str, existing: &[PathBuf]) -> Result<PathBuf, String> {
     let p = Path::new(input.trim());
     if !p.is_absolute() {
         return Err("Enter an absolute path, such as /mnt/data".into());

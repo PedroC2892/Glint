@@ -10,6 +10,7 @@ mod draw;
 mod icons;
 mod index;
 mod open;
+mod settings_page;
 mod ui;
 #[cfg(target_os = "linux")]
 mod x11focus;
