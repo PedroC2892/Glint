@@ -144,6 +144,8 @@ pub struct Glint {
     new_root: String,
     /// Time of the last change not yet written to disk.
     settings_dirty: Option<f64>,
+    /// Put keyboard focus on the selected swatch when the page next draws.
+    focus_swatch: bool,
     pub files: Arc<Mutex<Vec<FileEntry>>>,
     pub files_done: Arc<AtomicBool>,
     seen_files: usize,
@@ -196,6 +198,7 @@ impl Glint {
             cancel: Arc::new(AtomicBool::new(false)),
             new_root: String::new(),
             settings_dirty: None,
+            focus_swatch: false,
             files: Arc::new(Mutex::new(Vec::new())),
             files_done: Arc::new(AtomicBool::new(false)),
             seen_files: 0,
@@ -256,6 +259,7 @@ impl Glint {
         self.index_snapshot = self.settings.clone();
         self.show_preview = false;
         self.mode = Mode::Settings;
+        self.focus_swatch = true;
     }
 
     fn save_settings(&mut self, ctx: &egui::Context) {
@@ -547,7 +551,10 @@ impl Glint {
     }
 
     fn handle_keys(&mut self, ctx: &egui::Context) {
-        let (toggle, esc) = ctx.input_mut(|i| (i.consume_key(Modifiers::COMMAND, Key::Comma), i.consume_key(Modifiers::NONE, Key::Escape)));
+        // Esc closes an open colour picker first; only then does it leave settings.
+        let popup = self.mode == Mode::Settings && egui::Popup::is_any_open(ctx);
+        let (toggle, esc) = ctx
+            .input_mut(|i| (i.consume_key(Modifiers::COMMAND, Key::Comma), !popup && i.consume_key(Modifiers::NONE, Key::Escape)));
         if self.mode == Mode::Settings {
             if toggle || esc {
                 self.leave_settings(ctx);
@@ -738,6 +745,16 @@ impl Glint {
         ui.add_space(2.0);
     }
 
+    /// Accent ring around the control that has keyboard focus, kept in view.
+    fn focus_ring(ui: &egui::Ui, r: &egui::Response, accent: egui::Color32) {
+        if r.has_focus() {
+            ui.painter().rect_stroke(r.rect.expand(2.0), 5, Stroke::new(2.0, accent), egui::StrokeKind::Outside);
+        }
+        if r.gained_focus() {
+            r.scroll_to_me(None);
+        }
+    }
+
     fn settings_note(ui: &mut egui::Ui, note: &str) {
         ui.add(egui::Label::new(RichText::new(note).size(11.5).color(MUTED)).wrap());
     }
@@ -767,46 +784,72 @@ impl Glint {
             ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 7.0;
                 let st = &mut self.settings;
+                let accent = self.theme.accent;
+                let first_focus = std::mem::take(&mut self.focus_swatch);
+                let sel_swatch = draw::ACCENT_PRESETS.iter().position(|(_, c)| *c == st.accent).unwrap_or(0);
 
                 Self::settings_heading(ui, "Appearance");
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 8.0;
-                    for (name, rgb) in draw::ACCENT_PRESETS {
-                        let (r, resp) = ui.allocate_exact_size(Vec2::splat(26.0), Sense::click());
+                    for (n, (name, rgb)) in draw::ACCENT_PRESETS.iter().enumerate() {
+                        let (r, resp) = ui.allocate_exact_size(Vec2::splat(28.0), Sense::click());
+                        if first_focus && n == sel_swatch {
+                            resp.request_focus();
+                        }
                         let p = ui.painter();
                         p.circle_filled(r.center(), 9.5, egui::Color32::from_rgb(rgb[0], rgb[1], rgb[2]));
                         if st.accent == *rgb {
                             p.circle_stroke(r.center(), 12.0, Stroke::new(2.0, egui::Color32::WHITE));
+                        }
+                        if resp.has_focus() {
+                            p.circle_stroke(r.center(), 14.5, Stroke::new(2.0, accent));
+                        }
+                        if resp.gained_focus() {
+                            resp.scroll_to_me(None);
                         }
                         if resp.on_hover_text(*name).clicked() {
                             st.accent = *rgb;
                             (changed, restyle) = (true, true);
                         }
                     }
-                    ui.add_space(4.0);
-                    if ui.color_edit_button_srgb(&mut st.accent).changed() {
+                });
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Custom colour").size(13.5).color(FG));
+                    let r = ui.color_edit_button_srgb(&mut st.accent);
+                    Self::focus_ring(ui, &r, accent);
+                    if r.changed() {
                         (changed, restyle) = (true, true);
                     }
                 });
                 ui.horizontal(|ui| {
                     ui.label(RichText::new("Opacity").size(13.5).color(FG));
+                    // Arrow keys step 5%.
                     let slider = egui::Slider::new(&mut st.opacity, 0.5..=1.0)
+                        .step_by(0.05)
                         .custom_formatter(|v, _| format!("{:.0}%", v * 100.0))
                         .custom_parser(|t| t.trim().trim_end_matches('%').parse::<f64>().ok().map(|v| v / 100.0));
-                    if ui.add(slider).changed() {
+                    let r = ui.add(slider);
+                    Self::focus_ring(ui, &r, accent);
+                    if r.changed() {
                         (changed, restyle) = (true, true);
                     }
                 });
 
                 Self::settings_heading(ui, "Files");
-                changed |= ui.checkbox(&mut st.show_hidden, "Show hidden files and folders").changed();
+                let r = ui.checkbox(&mut st.show_hidden, "Show hidden files and folders");
+                Self::focus_ring(ui, &r, accent);
+                changed |= r.changed();
                 Self::settings_note(ui, "Folders such as .ssh, .gnupg and .git are never indexed, and hidden files are never previewed.");
-                changed |= ui.checkbox(&mut st.outside_home, "Index folders outside your home folder").changed();
+                let r = ui.checkbox(&mut st.outside_home, "Index folders outside your home folder");
+                Self::focus_ring(ui, &r, accent);
+                changed |= r.changed();
                 if st.outside_home {
                     let mut remove = None;
                     for (i, root) in st.extra_roots.iter().enumerate() {
                         ui.horizontal(|ui| {
-                            if ui.small_button("Remove").clicked() {
+                            let r = ui.small_button("Remove");
+                            Self::focus_ring(ui, &r, accent);
+                            if r.clicked() {
                                 remove = Some(i);
                             }
                             ui.add(egui::Label::new(RichText::new(root.display().to_string()).size(12.5).color(FG)).truncate());
@@ -816,33 +859,38 @@ impl Glint {
                         st.extra_roots.remove(i);
                         changed = true;
                     }
-                    ui.horizontal(|ui| {
-                        let w = ui.available_width() - 64.0;
-                        let edit = egui::TextEdit::singleline(&mut self.new_root).hint_text("/path/to/folder").desired_width(w);
-                        let resp = ui.add(edit);
-                        let enter = resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-                        if (ui.button("Add").clicked() || enter) && !self.new_root.trim().is_empty() {
-                            match validate_root(&self.new_root, &st.extra_roots) {
-                                Ok(root) => {
-                                    if root == Path::new("/") || root == Path::new("/usr") {
-                                        msgs.push("Indexing system folders is slow and fills the index".into());
-                                    }
-                                    st.extra_roots.push(root);
-                                    self.new_root.clear();
-                                    changed = true;
+                    // Field and button on separate rows, so Up/Down reach both.
+                    let edit = egui::TextEdit::singleline(&mut self.new_root).hint_text("/path/to/folder").desired_width(f32::INFINITY);
+                    let resp = ui.add(edit);
+                    Self::focus_ring(ui, &resp, accent);
+                    let enter = resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+                    let add = ui.button("Add");
+                    Self::focus_ring(ui, &add, accent);
+                    if (add.clicked() || enter) && !self.new_root.trim().is_empty() {
+                        match validate_root(&self.new_root, &st.extra_roots) {
+                            Ok(root) => {
+                                if root == Path::new("/") || root == Path::new("/usr") {
+                                    msgs.push("Indexing system folders is slow and fills the index".into());
                                 }
-                                Err(e) => msgs.push(e),
+                                st.extra_roots.push(root);
+                                self.new_root.clear();
+                                changed = true;
                             }
+                            Err(e) => msgs.push(e),
                         }
-                    });
+                    }
                     Self::settings_note(ui, "Folders you cannot read are skipped. Changes apply when you leave settings.");
                 }
 
                 Self::settings_heading(ui, "Search");
-                changed |= ui.checkbox(&mut st.online, "Online lookups (definitions and exchange rates)").changed();
+                let r = ui.checkbox(&mut st.online, "Online lookups (definitions and exchange rates)");
+                Self::focus_ring(ui, &r, accent);
+                changed |= r.changed();
 
                 ui.add_space(14.0);
-                if ui.button("Reset to defaults").clicked() {
+                let r = ui.button("Reset to defaults");
+                Self::focus_ring(ui, &r, accent);
+                if r.clicked() {
                     *st = Settings::default();
                     (changed, restyle) = (true, true);
                 }
