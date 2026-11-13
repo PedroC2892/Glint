@@ -7,27 +7,60 @@ use crate::ui::{Cat, Glint, Item};
 use eframe::egui::{self, Color32, CornerRadius, FontId, Label, Pos2, Rect, RichText, ScrollArea, Sense, Stroke, Vec2};
 use std::path::Path;
 
-// Transparent black glass (premultiplied RGBA: r <= a, g <= a, b <= a).
-pub const BG: Color32 = Color32::from_rgba_premultiplied(14, 14, 16, 235);
 pub const BORDER: Color32 = Color32::from_rgba_premultiplied(55, 55, 60, 90);
 pub const FG: Color32 = Color32::from_rgb(245, 245, 248);
 pub const MUTED: Color32 = Color32::from_rgb(155, 155, 162);
 pub const LOC_COLOR: Color32 = Color32::from_rgb(125, 125, 134);
-pub const ACCENT: Color32 = Color32::from_rgb(52, 120, 246);
 pub const HAIRLINE: Color32 = Color32::from_rgba_premultiplied(32, 32, 35, 55);
 const SEL_FILL: Color32 = Color32::from_rgba_premultiplied(45, 45, 50, 145);
-const SEL_STROKE: Color32 = Color32::from_rgba_premultiplied(80, 80, 88, 110);
 const CARD_FILL: Color32 = Color32::from_rgba_premultiplied(26, 26, 30, 140);
 const CARD_STROKE: Color32 = Color32::from_rgba_premultiplied(60, 60, 68, 85);
 const HEAD: Color32 = Color32::from_rgb(170, 170, 178);
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct Theme {
+    pub bg: Color32,
+    pub accent: Color32,
+}
+
+impl Theme {
+    pub fn new(accent: [u8; 3], opacity: f32) -> Self {
+        Self {
+            bg: Color32::from_rgba_unmultiplied(14, 14, 16, (opacity.clamp(0.5, 1.0) * 255.0).round() as u8),
+            accent: Color32::from_rgb(accent[0], accent[1], accent[2]),
+        }
+    }
+}
+
+impl Default for Theme {
+    fn default() -> Self {
+        Theme::new([52, 120, 246], 0.92)
+    }
+}
+
+pub const ACCENT_PRESETS: &[(&str, [u8; 3])] = &[
+    ("Blue", [52, 120, 246]),
+    ("Purple", [146, 96, 230]),
+    ("Emerald", [32, 170, 110]),
+    ("Orange", [240, 135, 40]),
+    ("Graphite", [140, 140, 150]),
+    ("Red", [230, 70, 70]),
+];
+
+pub fn apply_accent(ctx: &egui::Context, accent: Color32) {
+    ctx.global_style_mut(|s| {
+        s.visuals.selection.bg_fill = accent;
+        s.visuals.text_cursor.stroke = Stroke::new(2.0, accent);
+    });
+}
 
 fn text(t: impl Into<String>, size: f32, color: Color32) -> RichText {
     RichText::new(t).size(size).color(color)
 }
 
 /// The rounded glass panel behind everything.
-pub fn panel(p: &egui::Painter, r: Rect) {
-    p.rect_filled(r, 16, BG);
+pub fn panel(p: &egui::Painter, r: Rect, bg: Color32) {
+    p.rect_filled(r, 16, bg);
     // A faint top sheen, like light on glass.
     let sheen = Rect::from_min_max(r.min, Pos2::new(r.right(), r.top() + 70.0f32.min(r.height())));
     p.rect_filled(sheen, CornerRadius { nw: 16, ne: 16, sw: 0, se: 0 }, Color32::from_rgba_premultiplied(8, 8, 8, 10));
@@ -46,6 +79,9 @@ impl Glint {
             Item::Define(_) => self.icons.first(&["accessories-dictionary", "org.gnome.Dictionary"]),
             Item::Web(_) => self.icons.first(&["google-chrome", "chromium", "firefox", "internet-web-browser", "system-search", "edit-find"]),
             Item::WebQuery(_) => None,
+            Item::GlintSettings => {
+                self.icons.first(&["preferences-system", "preferences-desktop", "configure", "systemsettings"])
+            }
         }
     }
 
@@ -78,7 +114,8 @@ impl Glint {
             Item::Calc { .. } => tile(p, rect, Color32::from_rgb(242, 150, 30), "="),
             Item::Convert { .. } | Item::PendingRates => tile(p, rect, Color32::from_rgb(40, 160, 160), "⇄"),
             Item::Define(_) => tile(p, rect, Color32::from_rgb(170, 60, 50), "Aa"),
-            Item::Web(_) => globe(p, rect),
+            Item::Web(_) => globe(p, rect, self.theme.accent),
+            Item::GlintSettings => tile(p, rect, self.theme.accent, "G"),
         }
     }
 
@@ -92,6 +129,7 @@ impl Glint {
             Item::Define(w) => w.clone(),
             Item::Web(q) => q.clone(),
             Item::WebQuery(q) => q.clone(),
+            Item::GlintSettings => "Glint Settings".into(),
         }
     }
 
@@ -125,6 +163,7 @@ impl Glint {
                 Some(Fetch::Loading) => "Looking it up…".into(),
                 None => "Select to look up the definition".into(),
             },
+            Item::GlintSettings => "Appearance, files and search".into(),
             Item::Web(_) | Item::WebQuery(_) => String::new(),
         }
     }
@@ -161,13 +200,14 @@ impl Glint {
                 let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), Sense::click());
                 let card = row.cat.is_card();
                 let inner = if card { rect.shrink2(Vec2::new(12.0, 5.0)) } else { rect.shrink2(Vec2::new(10.0, 1.0)) };
+                let sel_stroke = self.theme.accent.gamma_multiply(0.7);
                 let p = ui.painter();
                 if card {
                     p.rect_filled(inner, 12, if selected { SEL_FILL } else { CARD_FILL });
-                    p.rect_stroke(inner, 12, Stroke::new(1.0, if selected { SEL_STROKE } else { CARD_STROKE }), egui::StrokeKind::Inside);
+                    p.rect_stroke(inner, 12, Stroke::new(1.0, if selected { sel_stroke } else { CARD_STROKE }), egui::StrokeKind::Inside);
                 } else if selected {
                     p.rect_filled(inner, 8, SEL_FILL);
-                    p.rect_stroke(inner, 8, Stroke::new(1.0, SEL_STROKE), egui::StrokeKind::Inside);
+                    p.rect_stroke(inner, 8, Stroke::new(1.0, sel_stroke), egui::StrokeKind::Inside);
                 } else {
                     if resp.hovered() {
                         p.rect_filled(inner, 8, CARD_FILL);
@@ -362,6 +402,11 @@ impl Glint {
                 let hint = "Press Enter (or Ctrl+B from anywhere) to search the web in your browser.";
                 ui.add(Label::new(text(hint, 13.0, FG)).wrap());
             }
+            Item::GlintSettings => {
+                self.header(ui, &row.item, "Glint Settings", "Glint");
+                ui.add_space(10.0);
+                ui.add(Label::new(text("Press Enter or Ctrl+, to open settings.", 13.0, FG)).wrap());
+            }
             Item::WebQuery(q) => {
                 self.header(ui, &row.item, &format!("“{q}”"), "Search suggestion");
                 ui.add_space(10.0);
@@ -494,10 +539,10 @@ fn page(p: &egui::Painter, r: Rect, accent: Color32, ext: &str) {
     }
 }
 
-fn globe(p: &egui::Painter, r: Rect) {
+fn globe(p: &egui::Painter, r: Rect, accent: Color32) {
     let c = r.center();
     let rad = r.width() * 0.45;
-    p.circle_filled(c, rad, Color32::from_rgb(52, 120, 246));
+    p.circle_filled(c, rad, accent);
     let st = Stroke::new((r.width() * 0.05).max(1.0), Color32::from_white_alpha(200));
     p.circle_stroke(c, rad * 0.98, st);
     p.line_segment([c - Vec2::new(rad, 0.0), c + Vec2::new(rad, 0.0)], st);
@@ -526,4 +571,25 @@ pub fn save_png(path: &Path, img: &egui::ColorImage, max_rows: usize) -> Result<
     enc.write_header()
         .and_then(|mut wr| wr.write_image_data(&data))
         .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn theme_default_values() {
+        let t = Theme::default();
+        assert_eq!(t.accent, Color32::from_rgb(52, 120, 246));
+        assert_eq!(t.bg.a(), 235);
+    }
+
+    #[test]
+    fn theme_clamping() {
+        let low = Theme::new([0, 0, 0], 0.1);
+        assert_eq!(low.bg.a(), 128); // 0.5 * 255 = 127.5 -> round = 128
+
+        let high = Theme::new([0, 0, 0], 1.5);
+        assert_eq!(high.bg.a(), 255);
+    }
 }

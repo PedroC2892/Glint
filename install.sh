@@ -118,6 +118,11 @@ Keywords=search;launcher;spotlight;find;calculator;notes;glint;files;apps;
 StartupNotify=false
 StartupWMClass=$APP_ID
 X-KDE-Shortcuts=Meta+Space
+Actions=Settings;
+
+[Desktop Action Settings]
+Name=Glint Settings
+Exec=$BIN_DIR/$APP_ID --settings
 EOF
 chmod 644 "$DESKTOP_FILE"
 

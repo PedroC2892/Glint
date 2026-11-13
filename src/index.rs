@@ -28,6 +28,8 @@ pub struct FileEntry {
     pub name_lc: String,
     pub is_dir: bool,
     pub depth: u8,
+    /// The entry or one of its ancestors below the root starts with '.'.
+    pub hidden: bool,
 }
 
 pub fn home() -> PathBuf {
@@ -141,43 +143,139 @@ fn parse_desktop(path: &Path, id: String, desktops: &[String]) -> Option<AppEntr
     })
 }
 
-const SKIP_DIRS: &[&str] = &["node_modules", "target", "__pycache__", "venv", "site-packages", "snap"];
 const MAX_FILES: usize = 400_000;
+const MAX_DEPTH: u8 = 10;
+/// Hidden directories that are never entered, even when hidden files are shown.
+const NEVER_HIDDEN: &[&str] = &[".git", ".cache", ".ssh", ".gnupg", ".password-store", ".pki"];
 
-/// Walk the home folder, publishing entries in batches; calls `tick` after each batch.
+pub struct IndexOpts {
+    pub roots: Vec<PathBuf>,
+    pub show_hidden: bool,
+    pub skip_dirs: Vec<String>,
+}
+
+impl IndexOpts {
+    /// Home first, then (if enabled) existing extra roots; canonical, unique, not
+    /// nested in another root and not a system pseudo path.
+    pub fn from_settings(s: &crate::config::Settings) -> Self {
+        let extras = s.extra_roots.iter().filter(|r| s.outside_home && r.is_dir()).cloned();
+        let mut all: Vec<PathBuf> = Vec::new();
+        for r in std::iter::once(home()).chain(extras) {
+            let Ok(r) = r.canonicalize() else { continue };
+            if !is_denied_system(&r) && !all.contains(&r) {
+                all.push(r);
+            }
+        }
+        let roots = all
+            .iter()
+            .enumerate()
+            .filter(|(i, r)| *i == 0 || !all.iter().any(|o| o != *r && r.starts_with(o)))
+            .map(|(_, r)| r.clone())
+            .collect();
+        Self { roots, show_hidden: s.show_hidden, skip_dirs: s.skip_dirs.clone() }
+    }
+}
+
+/// Pseudo filesystems: /proc, /sys, /dev and /run (but removable media under /run/media).
+pub fn is_denied_system(p: &Path) -> bool {
+    ["/proc", "/sys", "/dev"].iter().any(|d| p.starts_with(d))
+        || (p.starts_with("/run") && !p.starts_with("/run/media"))
+}
+
+type Item = (PathBuf, u8, bool); // directory, depth below its root, hidden
+
+struct Walk<'a, F: Fn()> {
+    opts: &'a IndexOpts,
+    deny: [PathBuf; 2],
+    out: &'a Mutex<Vec<FileEntry>>,
+    cancel: &'a AtomicBool,
+    tick: &'a F,
+    batch: Vec<FileEntry>,
+    total: usize,
+}
+
+impl<F: Fn()> Walk<'_, F> {
+    fn flush(&mut self) {
+        self.out.lock().unwrap().append(&mut self.batch);
+        (self.tick)();
+    }
+
+    /// Drains `stack`; hidden directories met in a visible one go to `later`.
+    /// Returns false when cancelled.
+    fn run(&mut self, stack: &mut Vec<Item>, later: &mut Vec<Item>) -> bool {
+        while let Some((dir, depth, in_hidden)) = stack.pop() {
+            if self.cancel.load(Ordering::Relaxed) {
+                return false;
+            }
+            if self.total >= MAX_FILES {
+                break;
+            }
+            let Ok(rd) = std::fs::read_dir(&dir) else { continue };
+            for e in rd.flatten() {
+                let name = e.file_name();
+                let name = name.to_string_lossy();
+                let dot = name.starts_with('.');
+                if dot && !self.opts.show_hidden {
+                    continue;
+                }
+                let Ok(ft) = e.file_type() else { continue };
+                if ft.is_symlink() {
+                    continue;
+                }
+                let path = e.path();
+                let is_dir = ft.is_dir();
+                let hidden = in_hidden || dot;
+                if is_dir
+                    && depth < MAX_DEPTH
+                    && !(dot && NEVER_HIDDEN.contains(&&*name))
+                    && !self.opts.skip_dirs.iter().any(|s| s.as_str() == &*name)
+                    && !is_denied_system(&path)
+                    && !self.deny.contains(&path)
+                    && !self.opts.roots.contains(&path)
+                {
+                    let target = if dot && !in_hidden { &mut *later } else { &mut *stack };
+                    target.push((path.clone(), depth + 1, hidden));
+                }
+                self.batch.push(FileEntry { path, name_lc: name.to_lowercase(), is_dir, depth, hidden });
+                self.total += 1;
+            }
+            if self.batch.len() > 4000 || self.total >= MAX_FILES {
+                self.flush();
+            }
+        }
+        true
+    }
+}
+
+/// Walk the roots, publishing entries in batches; calls `tick` after each batch.
+/// Visible trees of all roots come first and hidden directories last, so the
+/// MAX_FILES cap costs hidden clutter before real files. Returns early, leaving
+/// `out` and `done` untouched, once `cancel` is set.
 // ponytail: full rescan on each start and names only (no file contents); an
 // inotify-fed persistent index is the upgrade if homes get much larger.
-pub fn index_files(out: Arc<Mutex<Vec<FileEntry>>>, done: Arc<AtomicBool>, tick: impl Fn()) {
-    let mut stack = vec![(home(), 0u8)];
-    let mut batch = Vec::new();
-    let mut total = 0;
-    while let Some((dir, depth)) = stack.pop() {
-        let Ok(rd) = std::fs::read_dir(&dir) else { continue };
-        for e in rd.flatten() {
-            let name = e.file_name().to_string_lossy().into_owned();
-            if name.starts_with('.') {
-                continue;
-            }
-            let Ok(ft) = e.file_type() else { continue };
-            if ft.is_symlink() {
-                continue;
-            }
-            let is_dir = ft.is_dir();
-            if is_dir && depth < 10 && !SKIP_DIRS.contains(&name.as_str()) {
-                stack.push((e.path(), depth + 1));
-            }
-            batch.push(FileEntry { path: e.path(), name_lc: name.to_lowercase(), is_dir, depth });
-            total += 1;
-        }
-        if batch.len() > 4000 || total >= MAX_FILES {
-            out.lock().unwrap().append(&mut batch);
-            tick();
-        }
-        if total >= MAX_FILES {
-            break;
+// ponytail: network mounts (NFS/sshfs) can make read_dir slow; this runs on a
+// background thread so the UI stays responsive.
+pub fn index_files(
+    opts: IndexOpts,
+    out: Arc<Mutex<Vec<FileEntry>>>,
+    done: Arc<AtomicBool>,
+    cancel: Arc<AtomicBool>,
+    tick: impl Fn(),
+) {
+    let h = home();
+    let h = h.canonicalize().unwrap_or(h);
+    let deny = [h.join(".local/share/keyrings"), h.join(".local/share/Trash")];
+    let mut w = Walk { opts: &opts, deny, out: &out, cancel: &cancel, tick: &tick, batch: Vec::new(), total: 0 };
+    let mut later = Vec::new();
+    for root in &opts.roots {
+        if !w.run(&mut vec![(root.clone(), 0, false)], &mut later) {
+            return;
         }
     }
-    out.lock().unwrap().append(&mut batch);
+    if !w.run(&mut later, &mut Vec::new()) {
+        return;
+    }
+    out.lock().unwrap().append(&mut w.batch);
     done.store(true, Ordering::Relaxed);
     tick();
 }
@@ -316,7 +414,9 @@ pub struct FileInfo {
 pub fn file_info(path: &Path, is_dir: bool) -> FileInfo {
     let meta = std::fs::metadata(path).ok();
     let mut text = None;
-    if !is_dir && TEXT_EXT.contains(&ext_lc(path).as_str()) && let Ok(f) = std::fs::File::open(path) {
+    // Hidden files may hold secrets (.env, .netrc): show metadata only.
+    let hidden = path.components().any(|c| c.as_os_str().as_encoded_bytes().starts_with(b"."));
+    if !is_dir && !hidden && TEXT_EXT.contains(&ext_lc(path).as_str()) && let Ok(f) = std::fs::File::open(path) {
         let mut buf = Vec::new();
         let _ = f.take(3000).read_to_end(&mut buf);
         text = Some(String::from_utf8_lossy(&buf).into_owned());
@@ -408,5 +508,142 @@ mod tests {
         assert_eq!(format_time(t, 3 * 3600, t), "today, 1:13 am");
         assert_eq!(format_time(t, 0, at(1_700_000_000 + 86_400)), "yesterday, 10:13 pm");
         assert_eq!(format_size(1_234_567), "1.2 MB");
+    }
+
+    fn tree(tag: &str) -> PathBuf {
+        let t = std::env::temp_dir().join(format!("glint-idx-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&t);
+        for (d, f) in [
+            ("Docs", "a.txt"),
+            (".hidden", "secret.txt"),
+            (".ssh", "id_rsa"),
+            (".git", "HEAD"),
+            ("node_modules", "x.js"),
+            (".", ".dotfile"),
+            (".local/share/Trash", "trashed.txt"),
+        ] {
+            std::fs::create_dir_all(t.join(d)).unwrap();
+            std::fs::write(t.join(d).join(f), "x").unwrap();
+        }
+        t
+    }
+
+    fn run(t: &Path, show_hidden: bool, cancelled: bool) -> (Vec<(String, bool)>, bool) {
+        let opts = IndexOpts {
+            roots: vec![t.to_path_buf()],
+            show_hidden,
+            skip_dirs: vec!["node_modules".into()],
+        };
+        let out = Arc::new(Mutex::new(Vec::new()));
+        let done = Arc::new(AtomicBool::new(false));
+        index_files(opts, out.clone(), done.clone(), Arc::new(AtomicBool::new(cancelled)), || {});
+        let mut v: Vec<_> = out
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|e| (e.path.file_name().unwrap().to_string_lossy().into_owned(), e.hidden))
+            .collect();
+        v.sort();
+        (v, done.load(Ordering::Relaxed))
+    }
+
+    /// Manual: cargo test --release -- --ignored --nocapture bench_index_home
+    #[test]
+    #[ignore]
+    fn bench_index_home() {
+        for show_hidden in [false, true] {
+            let s = crate::config::Settings { show_hidden, ..Default::default() };
+            let out = Arc::new(Mutex::new(Vec::new()));
+            let done = Arc::new(AtomicBool::new(false));
+            let t = std::time::Instant::now();
+            index_files(IndexOpts::from_settings(&s), out.clone(), done.clone(), Arc::new(AtomicBool::new(false)), || {});
+            let ms = t.elapsed().as_millis();
+            assert!(done.load(Ordering::Relaxed));
+            println!("show_hidden={show_hidden}: {} entries, {ms} ms", out.lock().unwrap().len());
+        }
+    }
+
+    #[test]
+    fn index_respects_hidden_and_deny_rules() {
+        let t = tree("walk");
+        let (v, done) = run(&t, false, false);
+        assert!(done);
+        let names: Vec<_> = v.iter().map(|(n, _)| n.as_str()).collect();
+        assert_eq!(names, ["Docs", "a.txt", "node_modules"]);
+
+        let (v, _) = run(&t, true, false);
+        let has = |n: &str| v.iter().find(|(m, _)| m == n).map(|(_, h)| *h);
+        assert_eq!(has("Docs"), Some(false));
+        assert_eq!(has(".hidden"), Some(true));
+        assert_eq!(has("secret.txt"), Some(true));
+        assert_eq!(has(".dotfile"), Some(true));
+        assert_eq!(has("a.txt"), Some(false));
+        // .local/share/Trash under the root is not excluded unless under the real home.
+        assert_eq!(has("trashed.txt"), Some(true));
+        for n in ["id_rsa", "HEAD", "x.js"] {
+            assert_eq!(has(n), None, "{n} must not be indexed");
+        }
+        std::fs::remove_dir_all(&t).unwrap();
+    }
+
+    #[test]
+    fn cancelled_index_publishes_nothing() {
+        let t = tree("cancel");
+        let (v, done) = run(&t, true, true);
+        assert!(v.is_empty() && !done);
+        std::fs::remove_dir_all(&t).unwrap();
+    }
+
+    #[test]
+    fn system_paths_denied() {
+        assert!(is_denied_system(Path::new("/proc/1")));
+        assert!(is_denied_system(Path::new("/run/user")));
+        assert!(!is_denied_system(Path::new("/run/media/x")));
+        assert!(!is_denied_system(Path::new("/home")));
+    }
+
+    #[test]
+    fn index_opts_from_settings() {
+        let canon_home = home().canonicalize().unwrap();
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let tmp_a = std::env::temp_dir().join(format!("glint-test-opts-{}-{}", std::process::id(), nanos));
+        let sub = tmp_a.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+
+        let s_outside_false = crate::config::Settings {
+            outside_home: false,
+            extra_roots: vec![tmp_a.clone()],
+            ..crate::config::Settings::default()
+        };
+        let opts = IndexOpts::from_settings(&s_outside_false);
+        assert_eq!(opts.roots.len(), 1);
+        assert_eq!(opts.roots[0], canon_home);
+
+        let canon_tmp_a = tmp_a.canonicalize().unwrap();
+        if canon_tmp_a.starts_with(&canon_home) {
+            // If the temp dir happens to be inside home, skip the nested/tmpA assertions
+            // because tmpA would be dropped as nested in home.
+            let _ = std::fs::remove_dir_all(&tmp_a);
+            return;
+        }
+
+        let s_outside_true = crate::config::Settings {
+            outside_home: true,
+            extra_roots: vec![
+                tmp_a.clone(),
+                tmp_a.clone(),
+                sub.clone(),
+                PathBuf::from("/proc"),
+                PathBuf::from("/does/not/exist"),
+            ],
+            ..crate::config::Settings::default()
+        };
+        let opts = IndexOpts::from_settings(&s_outside_true);
+        assert_eq!(opts.roots, vec![canon_home, canon_tmp_a]);
+
+        let _ = std::fs::remove_dir_all(&tmp_a);
     }
 }

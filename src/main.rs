@@ -5,6 +5,7 @@
 //! web search, with a preview of the selected result.
 
 mod calc;
+mod config;
 mod draw;
 mod icons;
 mod index;

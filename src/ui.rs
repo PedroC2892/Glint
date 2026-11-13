@@ -1,10 +1,11 @@
 //! The search window: query handling, results, keyboard, window behaviour.
 
 use crate::calc;
-use crate::draw::{self, ACCENT, FG, HAIRLINE, MUTED};
+use crate::config::{self, Settings};
+use crate::draw::{self, FG, HAIRLINE, MUTED};
 use crate::index::{self, AppEntry, FileEntry, FileInfo, Kind};
 use crate::open::{self, Definition, Fetch};
-use eframe::egui::{self, Align, FontId, Key, Layout, Modifiers, Pos2, Rect, RichText, Sense, Stroke, UiBuilder, Vec2};
+use eframe::egui::{self, Align, FontId, Key, Layout, Modifiers, Pos2, Rect, RichText, ScrollArea, Sense, Stroke, UiBuilder, Vec2};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -15,6 +16,16 @@ pub const WIDTH: f32 = 680.0;
 pub const BAR_H: f32 = 54.0;
 const MAX_H: f32 = 520.0;
 const LIST_W: f32 = 350.0;
+/// Words that make the "Glint Settings" result appear (typed prefixes count).
+const SETTINGS_WORDS: &[&str] = &["glint settings", "settings", "preferences", "prefs", "config", "configuration", "options"];
+/// How long a settings change waits before it is written to disk.
+const SAVE_DELAY: f64 = 0.5;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Mode {
+    Search,
+    Settings,
+}
 
 // Row heights, shared by the list drawing and the panel-height estimate.
 pub const CARD_H: f32 = 62.0;
@@ -97,6 +108,7 @@ pub enum Item {
     Define(String),
     Web(String),
     WebQuery(String),
+    GlintSettings,
 }
 
 #[derive(Clone)]
@@ -124,6 +136,14 @@ pub struct Glint {
     pub scroll_to_sel: bool,
     pub apps: Vec<AppEntry>,
     pub icons: crate::icons::IconTheme,
+    mode: Mode,
+    pub settings: Settings,
+    /// Settings when the page was opened, to tell whether a re-index is needed.
+    index_snapshot: Settings,
+    cancel: Arc<AtomicBool>,
+    new_root: String,
+    /// Time of the last change not yet written to disk.
+    settings_dirty: Option<f64>,
     pub files: Arc<Mutex<Vec<FileEntry>>>,
     pub files_done: Arc<AtomicBool>,
     seen_files: usize,
@@ -146,6 +166,7 @@ pub struct Glint {
     centered: bool,
     was_focused: bool,
     pub screenshot: Option<PathBuf>,
+    pub theme: draw::Theme,
     frame: u32,
 }
 
@@ -158,15 +179,10 @@ impl Glint {
         cc.egui_ctx.set_visuals(egui::Visuals::dark());
         cc.egui_ctx.global_style_mut(|s| {
             s.interaction.selectable_labels = false;
-            s.visuals.selection.bg_fill = ACCENT;
-            s.visuals.text_cursor.stroke = Stroke::new(2.0, ACCENT);
         });
-        let files = Arc::new(Mutex::new(Vec::new()));
-        let files_done = Arc::new(AtomicBool::new(false));
-        {
-            let (f, d, c) = (files.clone(), files_done.clone(), cc.egui_ctx.clone());
-            std::thread::spawn(move || index::index_files(f, d, move || c.request_repaint()));
-        }
+        let (settings, err) = config::load();
+        let theme = draw::Theme::new(settings.accent, settings.opacity);
+        draw::apply_accent(&cc.egui_ctx, theme.accent);
         let mut me = Self {
             query,
             rows: Vec::new(),
@@ -174,8 +190,14 @@ impl Glint {
             scroll_to_sel: false,
             apps: index::load_apps(),
             icons: crate::icons::IconTheme::load(),
-            files,
-            files_done,
+            mode: Mode::Search,
+            index_snapshot: settings.clone(),
+            settings,
+            cancel: Arc::new(AtomicBool::new(false)),
+            new_root: String::new(),
+            settings_dirty: None,
+            files: Arc::new(Mutex::new(Vec::new())),
+            files_done: Arc::new(AtomicBool::new(false)),
             seen_files: 0,
             history: index::load_history(),
             rates: Arc::new(Mutex::new(None)),
@@ -195,6 +217,7 @@ impl Glint {
             centered: false,
             was_focused: false,
             screenshot,
+            theme,
             frame: 0,
         };
         #[cfg(target_os = "linux")]
@@ -203,8 +226,57 @@ impl Glint {
         {
             crate::x11focus::activate_in_background(w);
         }
+        if let Some(e) = err {
+            me.toast(&cc.egui_ctx, &e);
+        }
+        me.spawn_index(&cc.egui_ctx);
         me.refresh(&cc.egui_ctx);
         me
+    }
+
+    /// (Re)start the background file index with the current settings.
+    fn spawn_index(&mut self, ctx: &egui::Context) {
+        self.cancel.store(true, Ordering::Relaxed);
+        self.cancel = Arc::new(AtomicBool::new(false));
+        self.files = Arc::new(Mutex::new(Vec::new()));
+        self.files_done = Arc::new(AtomicBool::new(false));
+        self.seen_files = 0;
+        self.subtitles.clear();
+        let (f, d, c, cancel) = (self.files.clone(), self.files_done.clone(), ctx.clone(), self.cancel.clone());
+        let opts = index::IndexOpts::from_settings(&self.settings);
+        std::thread::spawn(move || index::index_files(opts, f, d, cancel, move || c.request_repaint()));
+    }
+
+    fn restyle(&mut self, ctx: &egui::Context) {
+        self.theme = draw::Theme::new(self.settings.accent, self.settings.opacity);
+        draw::apply_accent(ctx, self.theme.accent);
+    }
+
+    fn enter_settings(&mut self) {
+        self.index_snapshot = self.settings.clone();
+        self.show_preview = false;
+        self.mode = Mode::Settings;
+    }
+
+    fn save_settings(&mut self, ctx: &egui::Context) {
+        self.settings_dirty = None;
+        if let Err(e) = self.settings.save() {
+            self.toast(ctx, &format!("Could not save settings: {e}"));
+        }
+    }
+
+    fn leave_settings(&mut self, ctx: &egui::Context) {
+        if self.settings_dirty.is_some() {
+            self.save_settings(ctx);
+        }
+        if self.settings.index_differs(&self.index_snapshot) {
+            self.spawn_index(ctx);
+        }
+        self.mode = Mode::Search;
+        // A stale unfocused state must not close the popover right away.
+        self.was_focused = false;
+        self.focus_tries = 0;
+        self.refresh(ctx);
     }
 
     fn boost(&self, key: &str) -> i32 {
@@ -240,11 +312,11 @@ impl Glint {
             Some(calc::Conversion::Done { result, detail }) => {
                 rows.push(Row { cat: Cat::Conversion, item: Item::Convert { result, detail } })
             }
-            Some(calc::Conversion::NeedsRates) => {
+            Some(calc::Conversion::NeedsRates) if self.settings.online => {
                 self.start_rates(ctx);
                 rows.push(Row { cat: Cat::Conversion, item: Item::PendingRates });
             }
-            None => {}
+            Some(calc::Conversion::NeedsRates) | None => {}
         }
 
         // (score, category, item, name length for tie-breaks)
@@ -258,6 +330,9 @@ impl Glint {
                 // Apps lead, as Spotlight's top hit usually is an app.
                 hits.push((s + 20 + self.boost(&format!("app:{}", a.id)), cat, Item::App(i), a.name.len()));
             }
+        }
+        if q.len() >= 3 && (q.starts_with("glint") || SETTINGS_WORDS.iter().any(|w| w.starts_with(q.as_str()))) {
+            hits.push((90, Cat::Applications, Item::GlintSettings, 14));
         }
         {
             // Hundreds of thousands of names are scored per keystroke, so this
@@ -277,7 +352,7 @@ impl Glint {
                         true => 0,
                         false => f.path.to_str().and_then(|p| boosts.get(p)).copied().unwrap_or(0),
                     };
-                    let s = s - i32::from(f.depth.min(12)) + boost;
+                    let s = s - i32::from(f.depth.min(12)) + boost - if f.hidden { 10 } else { 0 };
                     file_hits.push((s, f.name_lc.len() as u32, i as u32));
                 }
             }
@@ -315,7 +390,7 @@ impl Glint {
                 rows.push(Row { cat: Cat::Web, item: Item::WebQuery(format!("{raw} app")) });
             }
         }
-        if (2..=40).contains(&raw.len()) && raw.chars().all(|c| c.is_ascii_alphabetic()) {
+        if self.settings.online && (2..=40).contains(&raw.len()) && raw.chars().all(|c| c.is_ascii_alphabetic()) {
             rows.push(Row { cat: Cat::Definition, item: Item::Define(raw.to_lowercase()) });
         }
 
@@ -413,6 +488,7 @@ impl Glint {
             Some(Item::Define(w)) => w.clone(),
             Some(Item::Web(q)) => open::web_url(q),
             Some(Item::WebQuery(q)) => q.clone(),
+            Some(Item::GlintSettings) => "Glint Settings".to_string(),
             _ => return,
         };
         ctx.copy_text(text);
@@ -440,6 +516,10 @@ impl Glint {
                 return;
             }
             Item::PendingRates => return,
+            Item::GlintSettings => {
+                self.enter_settings();
+                return;
+            }
             Item::Define(w) => open::xdg_open(&format!("https://en.wiktionary.org/wiki/{w}")),
             Item::Web(q) => open::xdg_open(&open::web_url(q)),
             Item::WebQuery(q) => open::xdg_open(&open::web_url(q)),
@@ -467,6 +547,17 @@ impl Glint {
     }
 
     fn handle_keys(&mut self, ctx: &egui::Context) {
+        let (toggle, esc) = ctx.input_mut(|i| (i.consume_key(Modifiers::COMMAND, Key::Comma), i.consume_key(Modifiers::NONE, Key::Escape)));
+        if self.mode == Mode::Settings {
+            if toggle || esc {
+                self.leave_settings(ctx);
+            }
+            return;
+        }
+        if toggle {
+            self.enter_settings();
+            return;
+        }
         let n = self.rows.len();
         let mut k = [false; 10];
         if ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::Y)) {
@@ -482,7 +573,7 @@ impl Glint {
             k[5] = i.consume_key(Modifiers::NONE, Key::ArrowDown) || i.consume_key(Modifiers::NONE, Key::Tab);
             k[6] = i.consume_key(Modifiers::NONE, Key::ArrowUp) || i.consume_key(Modifiers::SHIFT, Key::Tab);
             k[7] = i.consume_key(Modifiers::NONE, Key::Enter);
-            k[8] = i.consume_key(Modifiers::NONE, Key::Escape);
+            k[8] = esc;
             k[9] = i.events.iter().any(|e| matches!(e, egui::Event::Copy));
         });
         let [cdown, cup, reveal, web, define, down, up, enter, esc, copy] = k;
@@ -534,6 +625,7 @@ impl Glint {
         // The window keeps one size (some window managers ignore resizes);
         // only the panel drawn inside it grows with the results.
         self.height = match () {
+            _ if self.mode == Mode::Settings => MAX_H,
             _ if self.rows.is_empty() => BAR_H,
             _ if self.show_preview => MAX_H,
             _ => (BAR_H + self.content_height()).min(MAX_H).round(),
@@ -558,7 +650,7 @@ impl Glint {
         if self.screenshot.is_none() {
             match focused {
                 Some(true) => self.was_focused = true,
-                Some(false) if self.was_focused => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+                Some(false) if self.was_focused && self.mode == Mode::Search => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
                 _ => {}
             }
         }
@@ -567,8 +659,17 @@ impl Glint {
         // While indexing, new files arrive in many small batches: re-search at
         // most twice a second instead of after every batch.
         let now = ctx.input(|i| i.time);
-        let grown = self.files.lock().unwrap().len() != self.seen_files && now - self.last_auto_refresh > 0.5;
-        if !self.query.is_empty() && (grown || rates_ready != self.rates_ready) {
+        if let Some(t) = self.settings_dirty {
+            if now - t > SAVE_DELAY {
+                self.save_settings(ctx);
+            } else {
+                ctx.request_repaint_after(Duration::from_millis(((SAVE_DELAY - (now - t)) * 1000.0) as u64 + 20));
+            }
+        }
+        // The list is hidden in settings mode; `leave_settings` refreshes it.
+        let in_search = self.mode == Mode::Search && !self.query.is_empty();
+        let grown = in_search && self.files.lock().unwrap().len() != self.seen_files && now - self.last_auto_refresh > 0.5;
+        if in_search && (grown || rates_ready != self.rates_ready) {
             self.last_auto_refresh = now;
             let sel = self.sel;
             self.refresh(ctx);
@@ -631,6 +732,135 @@ impl Glint {
         });
     }
 
+    fn settings_heading(ui: &mut egui::Ui, title: &str) {
+        ui.add_space(12.0);
+        ui.label(RichText::new(title.to_uppercase()).size(11.0).strong().color(MUTED));
+        ui.add_space(2.0);
+    }
+
+    fn settings_note(ui: &mut egui::Ui, note: &str) {
+        ui.add(egui::Label::new(RichText::new(note).size(11.5).color(MUTED)).wrap());
+    }
+
+    /// The settings page: title bar plus a scrolling body. Every change marks the
+    /// settings dirty; the write to disk is debounced in `window_logic`.
+    fn settings_page(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
+        let full = ui.max_rect();
+        ui.allocate_ui_with_layout(Vec2::new(full.width(), BAR_H), Layout::left_to_right(Align::Center), |ui| {
+            ui.add_space(16.0);
+            ui.label(RichText::new("Glint Settings").size(20.0).color(FG));
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.add_space(16.0);
+                ui.label(RichText::new("Esc to go back").size(12.5).color(MUTED));
+            });
+        });
+        ui.painter().hline(full.x_range(), full.top() + BAR_H, Stroke::new(1.0, HAIRLINE));
+        let body = Rect::from_min_max(
+            Pos2::new(full.left() + 16.0, full.top() + BAR_H + 1.0),
+            Pos2::new(full.right() - 16.0, full.bottom() - 10.0),
+        );
+        let (mut changed, mut restyle) = (false, false);
+        let mut msgs: Vec<String> = Vec::new();
+        ui.scope_builder(UiBuilder::new().max_rect(body), |ui| {
+            ui.set_clip_rect(body);
+            ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = 7.0;
+                let st = &mut self.settings;
+
+                Self::settings_heading(ui, "Appearance");
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 8.0;
+                    for (name, rgb) in draw::ACCENT_PRESETS {
+                        let (r, resp) = ui.allocate_exact_size(Vec2::splat(26.0), Sense::click());
+                        let p = ui.painter();
+                        p.circle_filled(r.center(), 9.5, egui::Color32::from_rgb(rgb[0], rgb[1], rgb[2]));
+                        if st.accent == *rgb {
+                            p.circle_stroke(r.center(), 12.0, Stroke::new(2.0, egui::Color32::WHITE));
+                        }
+                        if resp.on_hover_text(*name).clicked() {
+                            st.accent = *rgb;
+                            (changed, restyle) = (true, true);
+                        }
+                    }
+                    ui.add_space(4.0);
+                    if ui.color_edit_button_srgb(&mut st.accent).changed() {
+                        (changed, restyle) = (true, true);
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Opacity").size(13.5).color(FG));
+                    let slider = egui::Slider::new(&mut st.opacity, 0.5..=1.0)
+                        .custom_formatter(|v, _| format!("{:.0}%", v * 100.0))
+                        .custom_parser(|t| t.trim().trim_end_matches('%').parse::<f64>().ok().map(|v| v / 100.0));
+                    if ui.add(slider).changed() {
+                        (changed, restyle) = (true, true);
+                    }
+                });
+
+                Self::settings_heading(ui, "Files");
+                changed |= ui.checkbox(&mut st.show_hidden, "Show hidden files and folders").changed();
+                Self::settings_note(ui, "Folders such as .ssh, .gnupg and .git are never indexed, and hidden files are never previewed.");
+                changed |= ui.checkbox(&mut st.outside_home, "Index folders outside your home folder").changed();
+                if st.outside_home {
+                    let mut remove = None;
+                    for (i, root) in st.extra_roots.iter().enumerate() {
+                        ui.horizontal(|ui| {
+                            if ui.small_button("Remove").clicked() {
+                                remove = Some(i);
+                            }
+                            ui.add(egui::Label::new(RichText::new(root.display().to_string()).size(12.5).color(FG)).truncate());
+                        });
+                    }
+                    if let Some(i) = remove {
+                        st.extra_roots.remove(i);
+                        changed = true;
+                    }
+                    ui.horizontal(|ui| {
+                        let w = ui.available_width() - 64.0;
+                        let edit = egui::TextEdit::singleline(&mut self.new_root).hint_text("/path/to/folder").desired_width(w);
+                        let resp = ui.add(edit);
+                        let enter = resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+                        if (ui.button("Add").clicked() || enter) && !self.new_root.trim().is_empty() {
+                            match validate_root(&self.new_root, &st.extra_roots) {
+                                Ok(root) => {
+                                    if root == Path::new("/") || root == Path::new("/usr") {
+                                        msgs.push("Indexing system folders is slow and fills the index".into());
+                                    }
+                                    st.extra_roots.push(root);
+                                    self.new_root.clear();
+                                    changed = true;
+                                }
+                                Err(e) => msgs.push(e),
+                            }
+                        }
+                    });
+                    Self::settings_note(ui, "Folders you cannot read are skipped. Changes apply when you leave settings.");
+                }
+
+                Self::settings_heading(ui, "Search");
+                changed |= ui.checkbox(&mut st.online, "Online lookups (definitions and exchange rates)").changed();
+
+                ui.add_space(14.0);
+                if ui.button("Reset to defaults").clicked() {
+                    *st = Settings::default();
+                    (changed, restyle) = (true, true);
+                }
+                ui.add_space(6.0);
+            });
+        });
+        if changed {
+            self.settings.sanitize();
+            self.settings_dirty = Some(ctx.input(|i| i.time));
+        }
+        if restyle {
+            self.restyle(&ctx);
+        }
+        if let Some(m) = msgs.last() {
+            self.toast(&ctx, m);
+        }
+    }
+
     /// Short status (copied, indexing) in a pill at the bottom right.
     fn status(&self, ui: &egui::Ui, full: Rect) {
         let text = match &self.toast {
@@ -654,6 +884,15 @@ impl eframe::App for Glint {
         [0.0; 4]
     }
 
+    /// Closing within the save debounce must not lose settings changes.
+    fn on_exit(&mut self) {
+        if self.settings_dirty.is_some()
+            && let Err(e) = self.settings.save()
+        {
+            eprintln!("Could not save settings: {e}");
+        }
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.handle_keys(&ctx);
@@ -661,7 +900,12 @@ impl eframe::App for Glint {
 
         let window = ui.max_rect();
         let full = Rect::from_min_size(window.min, Vec2::new(window.width(), self.height.min(window.height())));
-        draw::panel(ui.painter(), full);
+        draw::panel(ui.painter(), full, self.theme.bg);
+        if self.mode == Mode::Settings {
+            ui.scope_builder(UiBuilder::new().max_rect(full), |ui| self.settings_page(ui));
+            self.status(ui, full);
+            return;
+        }
         // The see-through area below the panel acts as "outside": a click there closes.
         let below = Rect::from_min_max(Pos2::new(window.left(), full.bottom()), window.max);
         if below.height() > 1.0
@@ -704,18 +948,20 @@ pub fn run() -> eframe::Result {
     let mut args = std::env::args().skip(1);
     let mut screenshot = None;
     let mut query = String::new();
+    let mut open_settings = false;
     while let Some(a) = args.next() {
         match a.as_str() {
             "--screenshot" => screenshot = args.next().map(PathBuf::from),
+            "--settings" => open_settings = true,
             "--query" => query = args.next().unwrap_or_default(),
             "-h" | "--help" => {
-                println!("glint [--query TEXT] [--screenshot FILE.png]");
+                println!("glint [--query TEXT] [--settings] [--screenshot FILE.png]");
                 return Ok(());
             }
             _ => {}
         }
     }
-    if screenshot.is_some() && query.is_empty() {
+    if screenshot.is_some() && query.is_empty() && !open_settings {
         query = "Notes".to_string();
     }
     let shot = screenshot.is_some();
@@ -752,5 +998,45 @@ pub fn run() -> eframe::Result {
             b.with_activate_ignoring_other_apps(false);
         }));
     }
-    eframe::run_native("Glint", options, Box::new(move |cc| Ok(Box::new(Glint::new(cc, screenshot, query)))))
+    eframe::run_native("Glint", options, Box::new(move |cc| {
+        let mut app = Glint::new(cc, screenshot, query);
+        if open_settings {
+            app.enter_settings();
+        }
+        Ok(Box::new(app))
+    }))
+}
+
+/// Checks a folder typed into the settings page; returns its canonical path.
+fn validate_root(input: &str, existing: &[PathBuf]) -> Result<PathBuf, String> {
+    let p = Path::new(input.trim());
+    if !p.is_absolute() {
+        return Err("Enter an absolute path, such as /mnt/data".into());
+    }
+    if !p.is_dir() {
+        return Err("That folder does not exist".into());
+    }
+    let c = p.canonicalize().map_err(|e| format!("Cannot read that folder: {e}"))?;
+    if index::is_denied_system(&c) {
+        return Err("System folders such as /proc, /sys and /dev cannot be indexed".into());
+    }
+    if existing.contains(&c) {
+        return Err("That folder is already in the list".into());
+    }
+    Ok(c)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_root_rejects_bad_input() {
+        assert!(validate_root("relative/dir", &[]).is_err());
+        assert!(validate_root("/definitely/not/here", &[]).is_err());
+        assert!(validate_root("/proc", &[]).is_err());
+        let tmp = std::env::temp_dir().canonicalize().unwrap();
+        let ok = validate_root(tmp.to_str().unwrap(), &[]).unwrap();
+        assert!(validate_root(tmp.to_str().unwrap(), &[ok]).is_err());
+    }
 }

@@ -42,9 +42,32 @@ Built with Rust and [egui](https://github.com/emilk/egui)/eframe.
 | `Ctrl+B` | Search the web |
 | `Ctrl+L` | Jump to the definition |
 | `Ctrl+Y` | Toggle the preview |
+| `Ctrl+,` | Open or close settings |
 | `Esc` | Clear the search, then close |
 
 Clicking outside the panel, or switching to another window, closes Glint.
+
+## Settings
+
+Open settings with `Ctrl+,`, by typing "settings", "preferences", or "glint" and
+choosing **Glint Settings**, by running `glint --settings`, or from the
+application menu's "Glint Settings" desktop action. Press `Esc` to go back.
+
+Options include:
+
+- **Appearance** – accent colour presets plus custom colour selection, and
+  window opacity from 50% to 100% (requires a compositor).
+- **Files** – toggle showing hidden files and folders, or index folders outside
+  your home directory with a custom folder list (unreadable folders are skipped).
+  Directories such as `.ssh`, `.gnupg`, `.password-store`, `.pki`, `.git`,
+  `.cache`, keyrings, and Trash are never indexed, and hidden files are never
+  previewed.
+- **Search** – toggle online lookups (definitions and exchange rates).
+
+Changes save automatically to `$XDG_CONFIG_HOME/glint/config.json` (default
+`~/.config/glint/config.json`), and indexing changes apply when leaving settings.
+Ignored directory names (`skip_dirs`) can be edited directly in the JSON file.
+Package caches and runtimes (npm, cargo, rustup, flatpak, …) are skipped by default via `skip_dirs`.
 
 ## Launching with a Keyboard Shortcut (Win + Space)
 
@@ -71,6 +94,7 @@ cargo build --release
 Options:
 
 - `--query TEXT` – start with a search already typed in.
+- `--settings` – open directly in settings view.
 - `--screenshot FILE.png` – draw about 120 frames, save the window as a PNG and
   exit, without taking keyboard focus (used for automated visual checks).
 
@@ -96,6 +120,10 @@ HTTPS:
 - **Definitions** send the selected word to the
   [Free Dictionary API](https://dictionaryapi.dev), and only when you select
   the Definition row, never while you type.
+
+Online lookups can be disabled in Settings. Sensitive directories (`.ssh`,
+`.gnupg`, `.password-store`, `.pki`, `.git`, `.cache`, keyrings, and Trash) are
+never indexed, and hidden files are never previewed.
 
 Web searches open [DuckDuckGo](https://duckduckgo.com) in your browser.
 Usage counts that improve ranking are stored locally in
@@ -125,6 +153,7 @@ focus-stealing prevention.
 | `src/ui.rs` | Window, search logic, keyboard handling |
 | `src/draw.rs` | Result list, preview and icon drawing |
 | `src/index.rs` | Apps, file index, history, dates |
+| `src/config.rs` | Settings, defaults and validation |
 | `src/icons.rs` | Desktop icon theme and file-type icons |
 | `src/calc.rs` | Calculator, unit and currency conversion |
 | `src/open.rs` | Launching apps and files, online lookups |
