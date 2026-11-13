@@ -152,6 +152,9 @@ pub struct Glint {
     pub(crate) hex: String,
     /// Keys to inject in screenshot mode, one per frame from frame 20.
     key_script: Vec<Key>,
+    hook_frame: u32,
+    /// Navigation keys taken from the raw input for the settings page.
+    pub(crate) nav_keys: Vec<(Key, bool)>,
     pub files: Arc<Mutex<Vec<FileEntry>>>,
     pub files_done: Arc<AtomicBool>,
     seen_files: usize,
@@ -208,6 +211,8 @@ impl Glint {
             scroll_row: false,
             hex: String::new(),
             key_script: Vec::new(),
+            hook_frame: 0,
+            nav_keys: Vec::new(),
             files: Arc::new(Mutex::new(Vec::new())),
             files_done: Arc::new(AtomicBool::new(false)),
             seen_files: 0,
@@ -774,6 +779,23 @@ impl eframe::App for Glint {
         [0.0; 4]
     }
 
+    /// Scripted keys (screenshot checks) enter here, one per frame from frame 20,
+    /// so they travel exactly like real key presses.
+    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
+        self.hook_frame += 1;
+        if self.screenshot.is_some()
+            && let Some(&key) = self.hook_frame.checked_sub(20).and_then(|i| self.key_script.get(i as usize))
+        {
+            for pressed in [true, false] {
+                raw.events.push(egui::Event::Key { key, physical_key: None, pressed, repeat: false, modifiers: Modifiers::NONE });
+            }
+        }
+        // Navigation keys of the settings page never reach egui's own focus handling.
+        if self.mode == Mode::Settings && !egui::Popup::is_any_open(_ctx) {
+            self.take_nav_keys(raw);
+        }
+    }
+
     /// Closing within the save debounce must not lose settings changes.
     fn on_exit(&mut self) {
         if self.settings_dirty.is_some()
@@ -785,13 +807,6 @@ impl eframe::App for Glint {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
-        // Scripted keys (screenshot checks only), one per frame from frame 20.
-        if self.screenshot.is_some()
-            && let Some(&key) = self.frame.checked_sub(20).and_then(|i| self.key_script.get(i as usize))
-        {
-            let event = egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::NONE };
-            ctx.input_mut(|i| i.events.push(event));
-        }
         self.handle_keys(&ctx);
         self.window_logic(&ctx);
 

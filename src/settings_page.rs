@@ -5,12 +5,13 @@ use crate::config::Settings;
 use crate::draw::{self, CARD_FILL, CARD_STROKE, FG, MUTED, SEL_FILL};
 use crate::ui::{Glint, BAR_H};
 use eframe::egui::text::{LayoutJob, TextFormat, TextWrapping};
-use eframe::egui::{self, Align, Color32, FontId, Id, Key, Layout, Modifiers, Pos2, Rect, RichText, ScrollArea, Sense, Stroke, UiBuilder, Vec2};
+use eframe::egui::{self, Align, Color32, FontId, Id, Key, Layout, Pos2, Rect, RichText, ScrollArea, Sense, Stroke, UiBuilder, Vec2};
 use std::path::Path;
 
 const ROW_H: f32 = 40.0;
 const ROW_SUB_H: f32 = 48.0;
 const OFF: Color32 = Color32::from_rgb(70, 70, 76);
+const OFF_RING: Color32 = Color32::from_rgb(110, 110, 118);
 const SIDE: f32 = 20.0;
 
 /// One focusable row of the page.
@@ -128,7 +129,7 @@ struct Cx {
 fn shell(ui: &mut egui::Ui, cx: &mut Cx, h: f32, last: bool) -> (usize, Rect, egui::Response) {
     let idx = cx.n;
     cx.n += 1;
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), Sense::CLICK);
     let inner = rect.shrink2(Vec2::new(4.0, 2.0));
     let p = ui.painter();
     if idx == cx.focus {
@@ -187,6 +188,7 @@ fn switch(ui: &egui::Ui, c: Rect, id: &str, on: bool, accent: Color32) {
     let r = Rect::from_center_size(Pos2::new(c.right() - 18.0, c.center().y), Vec2::new(36.0, 20.0));
     let p = ui.painter();
     p.rect_filled(r, 10, OFF.lerp_to_gamma(accent, t));
+    p.rect_stroke(r, 10, Stroke::new(1.0, OFF_RING.gamma_multiply(1.0 - t)), egui::StrokeKind::Inside);
     let x = r.left() + 10.0 + 16.0 * t;
     p.circle_filled(Pos2::new(x, r.center().y), 8.0, Color32::WHITE);
 }
@@ -201,28 +203,82 @@ impl Glint {
         }
     }
 
-    /// Settings-page keys. Runs before any widget, so Up/Down/Tab always move
-    /// the row, even while a text field has egui focus.
+    /// Moves the page's navigation keys out of the raw input, so egui's own
+    /// focus movement and Enter/Space "clicks" never see them. Text rows keep
+    /// Left/Right/Enter/Space for editing; Up/Down/Tab are always taken.
+    pub(crate) fn take_nav_keys(&mut self, raw: &mut egui::RawInput) {
+        let text = matches!(row_at(&self.settings, self.settings_row), Some(SRow::Custom | SRow::AddFolder));
+        let queue = &mut self.nav_keys;
+        raw.events.retain(|e| {
+            let egui::Event::Key { key, pressed, modifiers: m, .. } = e else { return true };
+            let plain = !(m.ctrl || m.alt || m.command || m.mac_cmd);
+            let take = match key {
+                Key::ArrowUp | Key::ArrowDown => plain && !m.shift,
+                Key::Tab => plain,
+                Key::ArrowLeft | Key::ArrowRight | Key::Enter | Key::Space => plain && !m.shift && !text,
+                _ => false,
+            };
+            if take && *pressed {
+                queue.push((*key, m.shift));
+            }
+            !take
+        });
+    }
+
+    /// Settings-page keys, applied before any widget runs.
     pub(crate) fn settings_keys(&mut self, ctx: &egui::Context) {
         let n = row_count(&self.settings);
         self.settings_row = self.settings_row.min(n - 1);
-        let text = matches!(row_at(&self.settings, self.settings_row), Some(SRow::Custom | SRow::AddFolder));
-        let (up, down, left, right, act) = ctx.input_mut(|i| {
-            let up = i.consume_key(Modifiers::SHIFT, Key::Tab) | i.consume_key(Modifiers::NONE, Key::ArrowUp);
-            let down = i.consume_key(Modifiers::NONE, Key::ArrowDown) | i.consume_key(Modifiers::NONE, Key::Tab);
-            // Text fields keep Left/Right/Space/Enter for editing.
-            let left = !text && i.consume_key(Modifiers::NONE, Key::ArrowLeft);
-            let right = !text && i.consume_key(Modifiers::NONE, Key::ArrowRight);
-            let act = !text && (i.consume_key(Modifiers::NONE, Key::Enter) | i.consume_key(Modifiers::NONE, Key::Space));
-            (up, down, left, right, act)
-        });
-        let moved = move_row(self.settings_row, n, down as i32 - up as i32);
-        if moved != self.settings_row {
-            self.settings_row = moved;
-            self.scroll_row = true;
+        for (key, shift) in std::mem::take(&mut self.nav_keys) {
+            let row = row_at(&self.settings, self.settings_row);
+            let text = matches!(row, Some(SRow::Custom | SRow::AddFolder));
+            let (dir, act) = match key {
+                Key::ArrowLeft if !text => (-1, false),
+                Key::ArrowRight if !text => (1, false),
+                Key::Enter | Key::Space if !text => (0, true),
+                Key::ArrowUp | Key::ArrowDown | Key::Tab => (0, false),
+                _ => continue,
+            };
+            let step = match key {
+                Key::ArrowUp => -1,
+                Key::ArrowDown => 1,
+                Key::Tab if shift => -1,
+                Key::Tab => 1,
+                _ => 0,
+            };
+            if step != 0 {
+                let moved = move_row(self.settings_row, n, step);
+                if moved != self.settings_row {
+                    self.settings_row = moved;
+                    self.scroll_row = true;
+                }
+                continue;
+            }
+            self.adjust_row(ctx, row, dir, act);
         }
-        let dir = right as i32 - left as i32;
-        match row_at(&self.settings, self.settings_row) {
+        // Text fields get egui focus only while their row is the focused one;
+        // nothing else may keep it.
+        let row = row_at(&self.settings, self.settings_row);
+        ctx.memory_mut(|m| {
+            for (id, want) in [(hex_id(), row == Some(SRow::Custom)), (root_id(), row == Some(SRow::AddFolder))] {
+                if want {
+                    m.request_focus(id);
+                } else {
+                    m.surrender_focus(id);
+                }
+            }
+            if let Some(f) = m.focused()
+                && f != hex_id()
+                && f != root_id()
+            {
+                m.surrender_focus(f);
+            }
+        });
+    }
+
+    /// Left/Right (`dir`) or Enter/Space (`act`) on a row.
+    fn adjust_row(&mut self, ctx: &egui::Context, row: Option<SRow>, dir: i32, act: bool) {
+        match row {
             Some(SRow::Accent) if dir != 0 || act => {
                 self.settings.accent = cycle_preset(self.settings.accent, if dir != 0 { dir } else { 1 });
                 self.touch(ctx, true);
@@ -253,17 +309,6 @@ impl Glint {
             }
             _ => {}
         }
-        // Text fields get egui focus only while their row is the focused one.
-        let row = row_at(&self.settings, self.settings_row);
-        ctx.memory_mut(|m| {
-            for (id, want) in [(hex_id(), row == Some(SRow::Custom)), (root_id(), row == Some(SRow::AddFolder))] {
-                if want {
-                    m.request_focus(id);
-                } else {
-                    m.surrender_focus(id);
-                }
-            }
-        });
     }
 
     /// The settings page: title bar plus a scrolling body. Every change marks the
@@ -310,7 +355,7 @@ impl Glint {
                     labels(ui, c, 170.0, "Accent colour", None);
                     for (n, (name, rgb)) in draw::ACCENT_PRESETS.iter().enumerate() {
                         let centre = Pos2::new(c.right() - 9.0 - (draw::ACCENT_PRESETS.len() - 1 - n) as f32 * 26.0, c.center().y);
-                        let resp = ui.interact(Rect::from_center_size(centre, Vec2::splat(24.0)), Id::unique(("accent", n)), Sense::click());
+                        let resp = ui.interact(Rect::from_center_size(centre, Vec2::splat(24.0)), Id::unique(("accent", n)), Sense::CLICK);
                         ui.painter().circle_filled(centre, 9.0, Color32::from_rgb(rgb[0], rgb[1], rgb[2]));
                         if st.accent == *rgb {
                             ui.painter().circle_stroke(centre, 12.0, Stroke::new(2.0, Color32::WHITE));
@@ -359,7 +404,7 @@ impl Glint {
                     let (right_x, cy) = (c.right() - 48.0, c.center().y);
                     let left_x = right_x - 160.0;
                     let hit = Rect::from_min_max(Pos2::new(left_x - 8.0, cy - 12.0), Pos2::new(right_x + 8.0, cy + 12.0));
-                    let resp = ui.interact(hit, Id::unique("opacity_slider"), Sense::click_and_drag());
+                    let resp = ui.interact(hit, Id::unique("opacity_slider"), Sense::CLICK | Sense::DRAG);
                     if resp.is_pointer_button_down_on()
                         && let Some(pos) = resp.interact_pointer_pos()
                     {
@@ -404,7 +449,7 @@ impl Glint {
                             let g = galley(ui, &path, 12.5, FG, true, c.width() - 80.0);
                             ui.painter().galley(Pos2::new(c.left(), c.center().y - g.size().y / 2.0), g, FG);
                             let b = Rect::from_center_size(Pos2::new(c.right() - 28.0, c.center().y), Vec2::new(56.0, 26.0));
-                            let resp = ui.interact(b, Id::unique(("remove", k)), Sense::click());
+                            let resp = ui.interact(b, Id::unique(("remove", k)), Sense::CLICK);
                             let col = if resp.hovered() { FG } else { MUTED };
                             if resp.hovered() {
                                 ui.painter().rect_filled(b, 6, SEL_FILL);
@@ -460,7 +505,7 @@ impl Glint {
                 cx.n += 1;
                 let (row, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::hover());
                 let pill = Rect::from_min_size(row.min, Vec2::new(138.0, 34.0));
-                let resp = ui.interact(pill, Id::unique("reset"), Sense::click());
+                let resp = ui.interact(pill, Id::unique("reset"), Sense::CLICK);
                 let focused = idx == cx.focus;
                 let p = ui.painter();
                 p.rect_filled(pill, 8, if focused { SEL_FILL } else if resp.hovered() { SEL_FILL.gamma_multiply(0.6) } else { CARD_FILL });
