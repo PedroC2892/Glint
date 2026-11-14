@@ -20,7 +20,6 @@ Open work for Glint, roughly in priority order.
 
 ## Search
 
-- [ ] Document wildcard search (`*.deb`, `photo?.png`) in the README.
 - [ ] A calculator query such as `2*3` is also read as a wildcard pattern and
       can list names like `2023`. The calculator result still shows first;
       decide whether to skip the pattern when the query is a valid expression.
