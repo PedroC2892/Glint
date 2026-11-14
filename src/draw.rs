@@ -756,6 +756,27 @@ fn page(p: &egui::Painter, r: Rect, accent: Color32, ext: &str) {
     }
 }
 
+fn convert_tile(p: &egui::Painter, r: Rect) {
+    p.rect_filled(
+        r,
+        CornerRadius::same((r.width() * 0.22) as u8),
+        Color32::from_rgb(40, 160, 160),
+    );
+    let c = r.center();
+    let s = r.width();
+    let st = Stroke::new((s * 0.08).max(1.5), Color32::WHITE);
+    let y1 = c.y - s * 0.12;
+    let y2 = c.y + s * 0.12;
+    let dx = s * 0.22;
+    let tip = s * 0.09;
+    p.line_segment([Pos2::new(c.x - dx, y1), Pos2::new(c.x + dx, y1)], st);
+    p.line_segment([Pos2::new(c.x + dx - tip, y1 - tip), Pos2::new(c.x + dx, y1)], st);
+    p.line_segment([Pos2::new(c.x + dx - tip, y1 + tip), Pos2::new(c.x + dx, y1)], st);
+    p.line_segment([Pos2::new(c.x - dx, y2), Pos2::new(c.x + dx, y2)], st);
+    p.line_segment([Pos2::new(c.x - dx + tip, y2 - tip), Pos2::new(c.x - dx, y2)], st);
+    p.line_segment([Pos2::new(c.x - dx + tip, y2 + tip), Pos2::new(c.x - dx, y2)], st);
+}
+
 fn globe(p: &egui::Painter, r: Rect, accent: Color32) {
     let c = r.center();
     let rad = r.width() * 0.45;
