@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Glint: a keyboard-driven search launcher for the Linux desktop.
 //!
 //! Finds applications, settings panels and files, does maths and unit or

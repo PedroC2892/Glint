@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Drawing: the result list, the preview pane and small painted icons
 //! (no image assets needed), plus saving the screenshot.
 
@@ -156,9 +157,7 @@ impl Glint {
                 page(p, rect, color, &e);
             }
             Item::Calc { .. } => tile(p, rect, Color32::from_rgb(242, 150, 30), "="),
-            Item::Convert { .. } | Item::PendingRates => {
-                tile(p, rect, Color32::from_rgb(40, 160, 160), "⇄")
-            }
+            Item::Convert { .. } | Item::PendingRates => convert_tile(p, rect),
             Item::Define(_) => tile(p, rect, Color32::from_rgb(170, 60, 50), "Aa"),
             Item::Web(_) => globe(p, rect, self.theme.accent),
             Item::GlintSettings => tile(p, rect, self.theme.accent, "G"),
@@ -307,14 +306,12 @@ impl Glint {
                     );
                     self.icon(ui, icon, &row.item);
                     if row.cat == Cat::Web && matches!(row.item, Item::Web(_)) {
-                        let arrow = Pos2::new(inner.right() - 12.0, inner.center().y);
-                        ui.painter().text(
-                            arrow,
-                            egui::Align2::CENTER_CENTER,
-                            "↗",
-                            FontId::proportional(13.0),
-                            MUTED,
-                        );
+                        let c = Pos2::new(inner.right() - 12.0, inner.center().y);
+                        let p = ui.painter();
+                        let st = Stroke::new(1.3, MUTED);
+                        p.line_segment([Pos2::new(c.x - 3.5, c.y + 3.5), Pos2::new(c.x + 3.5, c.y - 3.5)], st);
+                        p.line_segment([Pos2::new(c.x + 0.5, c.y - 3.5), Pos2::new(c.x + 3.5, c.y - 3.5)], st);
+                        p.line_segment([Pos2::new(c.x + 3.5, c.y - 0.5), Pos2::new(c.x + 3.5, c.y - 3.5)], st);
                     }
                     let right = inner.right() - if row.cat == Cat::Web { 28.0 } else { 10.0 };
                     let text_rect = Rect::from_min_max(
@@ -365,7 +362,7 @@ impl Glint {
             });
     }
 
-    /// "Folders ……… Show More ↗" with a hairline under it.
+    /// "Folders ……… Show More »" with a hairline under it.
     fn section_header(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, cat: Cat) {
         let (rect, _) = ui.allocate_exact_size(
             Vec2::new(ui.available_width(), crate::ui::HEAD_H),
@@ -387,7 +384,7 @@ impl Glint {
             Stroke::new(1.0, HAIRLINE),
         );
         if self.more.contains(&cat) {
-            let label = "Show More ⇲";
+            let label = "Show More »";
             let galley = p.layout_no_wrap(label.into(), FontId::proportional(12.5), HEAD);
             let r = Rect::from_min_size(
                 Pos2::new(inner.right() - galley.size().x, base - galley.size().y),

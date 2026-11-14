@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Glint
+Exec=glint --daemon
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
+X-KDE-autostart-phase=2

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! The settings page: grouped cards of rows, driven by its own row focus
 //! (not egui's widget focus) so keyboard navigation can never get trapped.
 
@@ -402,6 +403,7 @@ impl Glint {
                     ui.add_space(20.0);
                     ui.label(
                         RichText::new("↑↓ move · ←→ adjust · Enter toggle · Esc back")
+                            .monospace()
                             .size(12.0)
                             .color(MUTED),
                     );

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! What can be found: installed applications, settings panels, files in the
 //! home folder, plus usage history and file details for the preview.
 

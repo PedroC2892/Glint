@@ -1,7 +1,40 @@
 [package]
 name = "glint"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
+authors = ["Pedro Cruz <pedroafonsocruz2020@gmail.com>"]
+description = "Spotlight-style search launcher for the Linux desktop"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/PedroC2892/Glint"
+readme = "README.md"
+keywords = ["search", "launcher", "spotlight", "calculator", "linux"]
+categories = ["gui", "command-line-utilities"]
+
+[package.metadata.deb]
+maintainer = "Pedro Cruz <pedroafonsocruz2020@gmail.com>"
+section = "utils"
+priority = "optional"
+extended-description = """\
+Glint is a fast, keyboard-driven search launcher for the Linux desktop (X11 and Wayland) \
+with a resident daemon mode, instant start-up, and local search for apps, files, math, \
+units, currencies, and definitions."""
+depends = "$auto, libx11-6, libx11-xcb1, libxcursor1, libxrender1, libxfixes3, libxi6, libxkbcommon0, libxkbcommon-x11-0, libgl1, libegl1, libwayland-client0, libwayland-cursor0, libwayland-egl1"
+assets = [
+    ["target/release/glint", "usr/bin/glint", "755"],
+    ["packaging/glint.desktop", "usr/share/applications/glint.desktop", "644"],
+    ["packaging/glint-autostart.desktop", "etc/xdg/autostart/glint.desktop", "644"],
+    ["assets/glint.svg", "usr/share/icons/hicolor/scalable/apps/glint.svg", "644"],
+    ["assets/icons/16x16.png", "usr/share/icons/hicolor/16x16/apps/glint.png", "644"],
+    ["assets/icons/24x24.png", "usr/share/icons/hicolor/24x24/apps/glint.png", "644"],
+    ["assets/icons/32x32.png", "usr/share/icons/hicolor/32x32/apps/glint.png", "644"],
+    ["assets/icons/48x48.png", "usr/share/icons/hicolor/48x48/apps/glint.png", "644"],
+    ["assets/icons/64x64.png", "usr/share/icons/hicolor/64x64/apps/glint.png", "644"],
+    ["assets/icons/128x128.png", "usr/share/icons/hicolor/128x128/apps/glint.png", "644"],
+    ["assets/icons/256x256.png", "usr/share/icons/hicolor/256x256/apps/glint.png", "644"],
+    ["assets/icons/512x512.png", "usr/share/icons/hicolor/512x512/apps/glint.png", "644"],
+    ["README.md", "usr/share/doc/glint/README.md", "644"],
+    ["LICENSE", "usr/share/doc/glint/", "644"],
+]
 
 [dependencies]
 eframe = { version = "0.37.0", default-features = false, features = ["glow", "default_fonts", "x11", "wayland", "clipboard", "accesskit"] }

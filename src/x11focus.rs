@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Getting the keyboard on X11.
 //!
 //! Window managers with focus-stealing prevention (KWin, for one) ignore a

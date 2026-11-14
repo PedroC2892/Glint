@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Single-instance IPC over a Unix domain socket.
 //!
 //! Protocol: one UTF-8 line per connection, at most 4 KiB:

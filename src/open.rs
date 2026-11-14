@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Opening things (apps, files, folders, web pages) and the two online
 //! lookups: exchange rates and word definitions.
 

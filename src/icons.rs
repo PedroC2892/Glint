@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Icons from the desktop's own icon theme.
 //!
 //! Follows the freedesktop icon theme spec closely enough for a launcher: the

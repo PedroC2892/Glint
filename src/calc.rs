@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Calculator plus unit and currency conversion for the search bar.
 
 use std::collections::HashMap;

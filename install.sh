@@ -32,25 +32,14 @@ desktop_quote() {
 }
 
 wait_for_daemon_stop() {
-    sock="${XDG_RUNTIME_DIR:-}/glint/glint.sock"
+    if [ -z "${XDG_RUNTIME_DIR:-}" ]; then
+        return 0
+    fi
+    sock="${XDG_RUNTIME_DIR}/glint/glint.sock"
     i=0
     while [ "$i" -lt 30 ]; do
-        if [ -z "${XDG_RUNTIME_DIR:-}" ] || [ ! -e "$sock" ]; then
-            if ! have pgrep || ! pgrep -x "$APP_ID" >/dev/null 2>&1; then
-                break
-            fi
-        elif have python3; then
-            if ! python3 -c 'import socket, sys; s = socket.socket(socket.AF_UNIX); s.settimeout(0.2); s.connect(sys.argv[1])' "$sock" 2>/dev/null; then
-                break
-            fi
-        elif have pgrep; then
-            if ! pgrep -x "$APP_ID" >/dev/null 2>&1; then
-                break
-            fi
-        else
-            if [ ! -e "$sock" ]; then
-                break
-            fi
+        if [ ! -e "$sock" ]; then
+            break
         fi
         sleep 0.1
         i=$((i + 1))

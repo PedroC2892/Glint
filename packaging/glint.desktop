@@ -1,0 +1,19 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=Glint
+GenericName=Spotlight Search Launcher
+Comment=Spotlight-style search for apps, files, math, definitions and web
+Exec=glint
+Icon=glint
+Terminal=false
+Categories=Utility;Core;System;FileTools;
+Keywords=search;launcher;spotlight;find;calculator;notes;glint;files;apps;
+StartupNotify=false
+StartupWMClass=glint
+X-KDE-Shortcuts=Meta+Space
+Actions=Settings;
+
+[Desktop Action Settings]
+Name=Glint Settings
+Exec=glint --settings

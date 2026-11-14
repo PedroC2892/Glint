@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! The search window: query handling, results, keyboard, window behaviour.
 
 use crate::calc;
