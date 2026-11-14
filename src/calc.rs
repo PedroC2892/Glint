@@ -39,7 +39,9 @@ fn tokenize(s: &str) -> Option<Vec<Tok>> {
             i += 1;
         } else if c.is_ascii_digit() || c == '.' {
             let start = i;
-            while i < chars.len() && (chars[i].is_ascii_digit() || chars[i] == '.' || chars[i] == ',') {
+            while i < chars.len()
+                && (chars[i].is_ascii_digit() || chars[i] == '.' || chars[i] == ',')
+            {
                 i += 1;
             }
             let text: String = chars[start..i].iter().filter(|c| **c != ',').collect();
@@ -49,7 +51,9 @@ fn tokenize(s: &str) -> Option<Vec<Tok>> {
             while i < chars.len() && chars[i].is_alphanumeric() {
                 i += 1;
             }
-            out.push(Tok::Ident(chars[start..i].iter().collect::<String>().to_lowercase()));
+            out.push(Tok::Ident(
+                chars[start..i].iter().collect::<String>().to_lowercase(),
+            ));
         } else {
             out.push(match c {
                 '+' | '-' | '*' | '/' | '%' | '^' => Tok::Op(c),
@@ -186,7 +190,9 @@ pub fn format_number(v: f64) -> String {
         s = s.trim_end_matches('0').trim_end_matches('.').to_string();
     }
     let (sign, rest) = s.strip_prefix('-').map_or(("", s.as_str()), |r| ("-", r));
-    let (int, frac) = rest.split_once('.').map_or((rest, None), |(i, f)| (i, Some(f)));
+    let (int, frac) = rest
+        .split_once('.')
+        .map_or((rest, None), |(i, f)| (i, Some(f)));
     let mut grouped = String::new();
     for (n, c) in int.chars().enumerate() {
         if n > 0 && (int.len() - n) % 3 == 0 {
@@ -223,53 +229,353 @@ struct Unit {
 }
 
 const UNITS: &[Unit] = &[
-    Unit { names: &["mm", "millimeter", "millimeters", "millimetre", "millimetres"], label: "mm", dim: Dim::Length, factor: 0.001, pair: "in" },
-    Unit { names: &["cm", "centimeter", "centimeters", "centimetre", "centimetres"], label: "cm", dim: Dim::Length, factor: 0.01, pair: "in" },
-    Unit { names: &["m", "meter", "meters", "metre", "metres"], label: "m", dim: Dim::Length, factor: 1.0, pair: "ft" },
-    Unit { names: &["km", "kilometer", "kilometers", "kilometre", "kilometres"], label: "km", dim: Dim::Length, factor: 1000.0, pair: "mi" },
-    Unit { names: &["in", "inch", "inches", "\""], label: "in", dim: Dim::Length, factor: 0.0254, pair: "cm" },
-    Unit { names: &["ft", "foot", "feet", "'"], label: "ft", dim: Dim::Length, factor: 0.3048, pair: "m" },
-    Unit { names: &["yd", "yard", "yards"], label: "yd", dim: Dim::Length, factor: 0.9144, pair: "m" },
-    Unit { names: &["mi", "mile", "miles"], label: "mi", dim: Dim::Length, factor: 1609.344, pair: "km" },
-    Unit { names: &["mg", "milligram", "milligrams"], label: "mg", dim: Dim::Mass, factor: 0.000_001, pair: "oz" },
-    Unit { names: &["g", "gram", "grams"], label: "g", dim: Dim::Mass, factor: 0.001, pair: "oz" },
-    Unit { names: &["kg", "kilo", "kilos", "kilogram", "kilograms"], label: "kg", dim: Dim::Mass, factor: 1.0, pair: "lb" },
-    Unit { names: &["t", "tonne", "tonnes"], label: "t", dim: Dim::Mass, factor: 1000.0, pair: "lb" },
-    Unit { names: &["oz", "ounce", "ounces"], label: "oz", dim: Dim::Mass, factor: 0.028_349_523_125, pair: "g" },
-    Unit { names: &["lb", "lbs", "pound", "pounds"], label: "lb", dim: Dim::Mass, factor: 0.453_592_37, pair: "kg" },
-    Unit { names: &["st", "stone", "stones"], label: "st", dim: Dim::Mass, factor: 6.350_293_18, pair: "kg" },
-    Unit { names: &["ml", "milliliter", "milliliters", "millilitre", "millilitres"], label: "ml", dim: Dim::Volume, factor: 0.001, pair: "fl oz" },
-    Unit { names: &["l", "liter", "liters", "litre", "litres"], label: "L", dim: Dim::Volume, factor: 1.0, pair: "gal" },
-    Unit { names: &["gal", "gallon", "gallons"], label: "gal", dim: Dim::Volume, factor: 3.785_411_784, pair: "l" },
-    Unit { names: &["qt", "quart", "quarts"], label: "qt", dim: Dim::Volume, factor: 0.946_352_946, pair: "l" },
-    Unit { names: &["pt", "pint", "pints"], label: "pt", dim: Dim::Volume, factor: 0.473_176_473, pair: "ml" },
-    Unit { names: &["cup", "cups"], label: "cup", dim: Dim::Volume, factor: 0.236_588_236_5, pair: "ml" },
-    Unit { names: &["fl oz", "floz", "fluid ounce", "fluid ounces"], label: "fl oz", dim: Dim::Volume, factor: 0.029_573_529_562_5, pair: "ml" },
-    Unit { names: &["ms", "millisecond", "milliseconds"], label: "ms", dim: Dim::Time, factor: 0.001, pair: "s" },
-    Unit { names: &["s", "sec", "secs", "second", "seconds"], label: "s", dim: Dim::Time, factor: 1.0, pair: "min" },
-    Unit { names: &["min", "mins", "minute", "minutes"], label: "min", dim: Dim::Time, factor: 60.0, pair: "s" },
-    Unit { names: &["h", "hr", "hrs", "hour", "hours"], label: "h", dim: Dim::Time, factor: 3600.0, pair: "min" },
-    Unit { names: &["d", "day", "days"], label: "days", dim: Dim::Time, factor: 86_400.0, pair: "h" },
-    Unit { names: &["wk", "week", "weeks"], label: "weeks", dim: Dim::Time, factor: 604_800.0, pair: "days" },
-    Unit { names: &["yr", "year", "years"], label: "years", dim: Dim::Time, factor: 31_557_600.0, pair: "days" },
-    Unit { names: &["b", "byte", "bytes"], label: "B", dim: Dim::Data, factor: 1.0, pair: "kb" },
-    Unit { names: &["kb", "kilobyte", "kilobytes"], label: "KB", dim: Dim::Data, factor: 1e3, pair: "b" },
-    Unit { names: &["mb", "megabyte", "megabytes"], label: "MB", dim: Dim::Data, factor: 1e6, pair: "kb" },
-    Unit { names: &["gb", "gigabyte", "gigabytes"], label: "GB", dim: Dim::Data, factor: 1e9, pair: "mb" },
-    Unit { names: &["tb", "terabyte", "terabytes"], label: "TB", dim: Dim::Data, factor: 1e12, pair: "gb" },
-    Unit { names: &["kmh", "km/h", "kph"], label: "km/h", dim: Dim::Speed, factor: 1.0 / 3.6, pair: "mph" },
-    Unit { names: &["mph"], label: "mph", dim: Dim::Speed, factor: 0.447_04, pair: "km/h" },
-    Unit { names: &["m/s", "mps"], label: "m/s", dim: Dim::Speed, factor: 1.0, pair: "km/h" },
-    Unit { names: &["knot", "knots", "kn"], label: "knots", dim: Dim::Speed, factor: 0.514_444, pair: "km/h" },
-    Unit { names: &["m2", "sqm", "square meter", "square meters"], label: "m²", dim: Dim::Area, factor: 1.0, pair: "sqft" },
-    Unit { names: &["sqft", "ft2", "square foot", "square feet"], label: "sq ft", dim: Dim::Area, factor: 0.092_903_04, pair: "m2" },
-    Unit { names: &["km2", "sqkm", "square kilometer", "square kilometers"], label: "km²", dim: Dim::Area, factor: 1e6, pair: "sqmi" },
-    Unit { names: &["sqmi", "mi2", "square mile", "square miles"], label: "sq mi", dim: Dim::Area, factor: 2_589_988.11, pair: "km2" },
-    Unit { names: &["ha", "hectare", "hectares"], label: "ha", dim: Dim::Area, factor: 10_000.0, pair: "acre" },
-    Unit { names: &["acre", "acres", "ac"], label: "acres", dim: Dim::Area, factor: 4_046.856_422_4, pair: "ha" },
-    Unit { names: &["c", "°c", "celsius", "degc"], label: "°C", dim: Dim::Temp, factor: 0.0, pair: "f" },
-    Unit { names: &["f", "°f", "fahrenheit", "degf"], label: "°F", dim: Dim::Temp, factor: 0.0, pair: "c" },
-    Unit { names: &["k", "kelvin"], label: "K", dim: Dim::Temp, factor: 0.0, pair: "c" },
+    Unit {
+        names: &[
+            "mm",
+            "millimeter",
+            "millimeters",
+            "millimetre",
+            "millimetres",
+        ],
+        label: "mm",
+        dim: Dim::Length,
+        factor: 0.001,
+        pair: "in",
+    },
+    Unit {
+        names: &[
+            "cm",
+            "centimeter",
+            "centimeters",
+            "centimetre",
+            "centimetres",
+        ],
+        label: "cm",
+        dim: Dim::Length,
+        factor: 0.01,
+        pair: "in",
+    },
+    Unit {
+        names: &["m", "meter", "meters", "metre", "metres"],
+        label: "m",
+        dim: Dim::Length,
+        factor: 1.0,
+        pair: "ft",
+    },
+    Unit {
+        names: &["km", "kilometer", "kilometers", "kilometre", "kilometres"],
+        label: "km",
+        dim: Dim::Length,
+        factor: 1000.0,
+        pair: "mi",
+    },
+    Unit {
+        names: &["in", "inch", "inches", "\""],
+        label: "in",
+        dim: Dim::Length,
+        factor: 0.0254,
+        pair: "cm",
+    },
+    Unit {
+        names: &["ft", "foot", "feet", "'"],
+        label: "ft",
+        dim: Dim::Length,
+        factor: 0.3048,
+        pair: "m",
+    },
+    Unit {
+        names: &["yd", "yard", "yards"],
+        label: "yd",
+        dim: Dim::Length,
+        factor: 0.9144,
+        pair: "m",
+    },
+    Unit {
+        names: &["mi", "mile", "miles"],
+        label: "mi",
+        dim: Dim::Length,
+        factor: 1609.344,
+        pair: "km",
+    },
+    Unit {
+        names: &["mg", "milligram", "milligrams"],
+        label: "mg",
+        dim: Dim::Mass,
+        factor: 0.000_001,
+        pair: "oz",
+    },
+    Unit {
+        names: &["g", "gram", "grams"],
+        label: "g",
+        dim: Dim::Mass,
+        factor: 0.001,
+        pair: "oz",
+    },
+    Unit {
+        names: &["kg", "kilo", "kilos", "kilogram", "kilograms"],
+        label: "kg",
+        dim: Dim::Mass,
+        factor: 1.0,
+        pair: "lb",
+    },
+    Unit {
+        names: &["t", "tonne", "tonnes"],
+        label: "t",
+        dim: Dim::Mass,
+        factor: 1000.0,
+        pair: "lb",
+    },
+    Unit {
+        names: &["oz", "ounce", "ounces"],
+        label: "oz",
+        dim: Dim::Mass,
+        factor: 0.028_349_523_125,
+        pair: "g",
+    },
+    Unit {
+        names: &["lb", "lbs", "pound", "pounds"],
+        label: "lb",
+        dim: Dim::Mass,
+        factor: 0.453_592_37,
+        pair: "kg",
+    },
+    Unit {
+        names: &["st", "stone", "stones"],
+        label: "st",
+        dim: Dim::Mass,
+        factor: 6.350_293_18,
+        pair: "kg",
+    },
+    Unit {
+        names: &[
+            "ml",
+            "milliliter",
+            "milliliters",
+            "millilitre",
+            "millilitres",
+        ],
+        label: "ml",
+        dim: Dim::Volume,
+        factor: 0.001,
+        pair: "fl oz",
+    },
+    Unit {
+        names: &["l", "liter", "liters", "litre", "litres"],
+        label: "L",
+        dim: Dim::Volume,
+        factor: 1.0,
+        pair: "gal",
+    },
+    Unit {
+        names: &["gal", "gallon", "gallons"],
+        label: "gal",
+        dim: Dim::Volume,
+        factor: 3.785_411_784,
+        pair: "l",
+    },
+    Unit {
+        names: &["qt", "quart", "quarts"],
+        label: "qt",
+        dim: Dim::Volume,
+        factor: 0.946_352_946,
+        pair: "l",
+    },
+    Unit {
+        names: &["pt", "pint", "pints"],
+        label: "pt",
+        dim: Dim::Volume,
+        factor: 0.473_176_473,
+        pair: "ml",
+    },
+    Unit {
+        names: &["cup", "cups"],
+        label: "cup",
+        dim: Dim::Volume,
+        factor: 0.236_588_236_5,
+        pair: "ml",
+    },
+    Unit {
+        names: &["fl oz", "floz", "fluid ounce", "fluid ounces"],
+        label: "fl oz",
+        dim: Dim::Volume,
+        factor: 0.029_573_529_562_5,
+        pair: "ml",
+    },
+    Unit {
+        names: &["ms", "millisecond", "milliseconds"],
+        label: "ms",
+        dim: Dim::Time,
+        factor: 0.001,
+        pair: "s",
+    },
+    Unit {
+        names: &["s", "sec", "secs", "second", "seconds"],
+        label: "s",
+        dim: Dim::Time,
+        factor: 1.0,
+        pair: "min",
+    },
+    Unit {
+        names: &["min", "mins", "minute", "minutes"],
+        label: "min",
+        dim: Dim::Time,
+        factor: 60.0,
+        pair: "s",
+    },
+    Unit {
+        names: &["h", "hr", "hrs", "hour", "hours"],
+        label: "h",
+        dim: Dim::Time,
+        factor: 3600.0,
+        pair: "min",
+    },
+    Unit {
+        names: &["d", "day", "days"],
+        label: "days",
+        dim: Dim::Time,
+        factor: 86_400.0,
+        pair: "h",
+    },
+    Unit {
+        names: &["wk", "week", "weeks"],
+        label: "weeks",
+        dim: Dim::Time,
+        factor: 604_800.0,
+        pair: "days",
+    },
+    Unit {
+        names: &["yr", "year", "years"],
+        label: "years",
+        dim: Dim::Time,
+        factor: 31_557_600.0,
+        pair: "days",
+    },
+    Unit {
+        names: &["b", "byte", "bytes"],
+        label: "B",
+        dim: Dim::Data,
+        factor: 1.0,
+        pair: "kb",
+    },
+    Unit {
+        names: &["kb", "kilobyte", "kilobytes"],
+        label: "KB",
+        dim: Dim::Data,
+        factor: 1e3,
+        pair: "b",
+    },
+    Unit {
+        names: &["mb", "megabyte", "megabytes"],
+        label: "MB",
+        dim: Dim::Data,
+        factor: 1e6,
+        pair: "kb",
+    },
+    Unit {
+        names: &["gb", "gigabyte", "gigabytes"],
+        label: "GB",
+        dim: Dim::Data,
+        factor: 1e9,
+        pair: "mb",
+    },
+    Unit {
+        names: &["tb", "terabyte", "terabytes"],
+        label: "TB",
+        dim: Dim::Data,
+        factor: 1e12,
+        pair: "gb",
+    },
+    Unit {
+        names: &["kmh", "km/h", "kph"],
+        label: "km/h",
+        dim: Dim::Speed,
+        factor: 1.0 / 3.6,
+        pair: "mph",
+    },
+    Unit {
+        names: &["mph"],
+        label: "mph",
+        dim: Dim::Speed,
+        factor: 0.447_04,
+        pair: "km/h",
+    },
+    Unit {
+        names: &["m/s", "mps"],
+        label: "m/s",
+        dim: Dim::Speed,
+        factor: 1.0,
+        pair: "km/h",
+    },
+    Unit {
+        names: &["knot", "knots", "kn"],
+        label: "knots",
+        dim: Dim::Speed,
+        factor: 0.514_444,
+        pair: "km/h",
+    },
+    Unit {
+        names: &["m2", "sqm", "square meter", "square meters"],
+        label: "m²",
+        dim: Dim::Area,
+        factor: 1.0,
+        pair: "sqft",
+    },
+    Unit {
+        names: &["sqft", "ft2", "square foot", "square feet"],
+        label: "sq ft",
+        dim: Dim::Area,
+        factor: 0.092_903_04,
+        pair: "m2",
+    },
+    Unit {
+        names: &["km2", "sqkm", "square kilometer", "square kilometers"],
+        label: "km²",
+        dim: Dim::Area,
+        factor: 1e6,
+        pair: "sqmi",
+    },
+    Unit {
+        names: &["sqmi", "mi2", "square mile", "square miles"],
+        label: "sq mi",
+        dim: Dim::Area,
+        factor: 2_589_988.11,
+        pair: "km2",
+    },
+    Unit {
+        names: &["ha", "hectare", "hectares"],
+        label: "ha",
+        dim: Dim::Area,
+        factor: 10_000.0,
+        pair: "acre",
+    },
+    Unit {
+        names: &["acre", "acres", "ac"],
+        label: "acres",
+        dim: Dim::Area,
+        factor: 4_046.856_422_4,
+        pair: "ha",
+    },
+    Unit {
+        names: &["c", "°c", "celsius", "degc"],
+        label: "°C",
+        dim: Dim::Temp,
+        factor: 0.0,
+        pair: "f",
+    },
+    Unit {
+        names: &["f", "°f", "fahrenheit", "degf"],
+        label: "°F",
+        dim: Dim::Temp,
+        factor: 0.0,
+        pair: "c",
+    },
+    Unit {
+        names: &["k", "kelvin"],
+        label: "K",
+        dim: Dim::Temp,
+        factor: 0.0,
+        pair: "c",
+    },
 ];
 
 fn unit(name: &str) -> Option<&'static Unit> {
@@ -312,7 +618,10 @@ fn currency_code(word: &str, rates: &HashMap<String, f64>) -> Option<String> {
 }
 
 pub enum Conversion {
-    Done { result: String, detail: String },
+    Done {
+        result: String,
+        detail: String,
+    },
     /// A currency conversion that needs the live rate table first.
     NeedsRates,
 }
@@ -322,7 +631,10 @@ fn split_query(input: &str) -> Option<(f64, String, Option<String>)> {
     let q = input.trim().to_lowercase();
     // A currency symbol may lead the number: "$20".
     let (sym, q) = match q.chars().next()? {
-        c @ ('$' | '€' | '£' | '¥') => (Some(c.to_string()), q[c.len_utf8()..].trim_start().to_string()),
+        c @ ('$' | '€' | '£' | '¥') => (
+            Some(c.to_string()),
+            q[c.len_utf8()..].trim_start().to_string(),
+        ),
         _ => (None, q),
     };
     let num_end = q
@@ -333,11 +645,15 @@ fn split_query(input: &str) -> Option<(f64, String, Option<String>)> {
     let rest = q[num_end..].trim();
     let (from, to) = [" to ", " in ", " as ", " = ", " into "]
         .iter()
-        .find_map(|sep| rest.split_once(sep).map(|(a, b)| (a.trim().to_string(), Some(b.trim().to_string()))))
+        .find_map(|sep| {
+            rest.split_once(sep)
+                .map(|(a, b)| (a.trim().to_string(), Some(b.trim().to_string())))
+        })
         .or_else(|| {
             // "$20 to eur" leaves rest = "to eur".
             ["to ", "in ", "into "].iter().find_map(|sep| {
-                rest.strip_prefix(sep).map(|b| (String::new(), Some(b.trim().to_string())))
+                rest.strip_prefix(sep)
+                    .map(|b| (String::new(), Some(b.trim().to_string())))
             })
         })
         .unwrap_or((rest.to_string(), None));
@@ -389,7 +705,13 @@ pub fn convert(input: &str, rates: &HashMap<String, f64>) -> Option<Conversion> 
     let rounded = (out * 1e6).round() / 1e6;
     Some(Conversion::Done {
         result: format!("{} {}", format_number(rounded), dst.label),
-        detail: format!("{} {} = {} {}", format_number(value), src.label, format_number(rounded), dst.label),
+        detail: format!(
+            "{} {} = {} {}",
+            format_number(value),
+            src.label,
+            format_number(rounded),
+            dst.label
+        ),
     })
 }
 
@@ -433,7 +755,10 @@ mod tests {
         assert_eq!(done("32f", &none), "0 °C");
         assert_eq!(done("2 kg", &none), "4.409245 lb");
         assert_eq!(done("5 kg to km", &none), "-");
-        assert!(matches!(convert("10 usd to eur", &none), Some(Conversion::NeedsRates)));
+        assert!(matches!(
+            convert("10 usd to eur", &none),
+            Some(Conversion::NeedsRates)
+        ));
         let rates = HashMap::from([("USD".to_string(), 1.0), ("EUR".to_string(), 0.5)]);
         assert_eq!(done("10 usd to eur", &rates), "5.00 EUR");
         assert_eq!(done("$10 to eur", &rates), "5.00 EUR");

@@ -5,7 +5,10 @@ use crate::config::{self, Settings};
 use crate::draw::{self, FG, HAIRLINE, MUTED};
 use crate::index::{self, AppEntry, FileEntry, FileInfo, Kind};
 use crate::open::{self, Definition, Fetch};
-use eframe::egui::{self, Align, FontId, Key, Layout, Modifiers, Pos2, Rect, RichText, Sense, Stroke, UiBuilder, Vec2};
+use eframe::egui::{
+    self, Align, FontId, Key, Layout, Modifiers, Pos2, Rect, RichText, Sense, Stroke, UiBuilder,
+    Vec2,
+};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -17,7 +20,15 @@ pub const BAR_H: f32 = 54.0;
 const MAX_H: f32 = 520.0;
 const LIST_W: f32 = 350.0;
 /// Words that make the "Glint Settings" result appear (typed prefixes count).
-const SETTINGS_WORDS: &[&str] = &["glint settings", "settings", "preferences", "prefs", "config", "configuration", "options"];
+const SETTINGS_WORDS: &[&str] = &[
+    "glint settings",
+    "settings",
+    "preferences",
+    "prefs",
+    "config",
+    "configuration",
+    "options",
+];
 /// How long a settings change waits before it is written to disk.
 const SAVE_DELAY: f64 = 0.5;
 
@@ -259,9 +270,16 @@ impl Glint {
         self.files_done = Arc::new(AtomicBool::new(false));
         self.seen_files = 0;
         self.subtitles.clear();
-        let (f, d, c, cancel) = (self.files.clone(), self.files_done.clone(), ctx.clone(), self.cancel.clone());
+        let (f, d, c, cancel) = (
+            self.files.clone(),
+            self.files_done.clone(),
+            ctx.clone(),
+            self.cancel.clone(),
+        );
         let opts = index::IndexOpts::from_settings(&self.settings);
-        std::thread::spawn(move || index::index_files(opts, f, d, cancel, move || c.request_repaint()));
+        std::thread::spawn(move || {
+            index::index_files(opts, f, d, cancel, move || c.request_repaint())
+        });
     }
 
     pub(crate) fn restyle(&mut self, ctx: &egui::Context) {
@@ -320,7 +338,13 @@ impl Glint {
         }
 
         if let Some(v) = calc::calculate(&raw) {
-            rows.push(Row { cat: Cat::Calculator, item: Item::Calc { expr: raw.clone(), value: calc::format_number(v) } });
+            rows.push(Row {
+                cat: Cat::Calculator,
+                item: Item::Calc {
+                    expr: raw.clone(),
+                    value: calc::format_number(v),
+                },
+            });
         }
         let rates = match &*self.rates.lock().unwrap() {
             Some(Fetch::Ready(r)) => r.clone(),
@@ -328,12 +352,16 @@ impl Glint {
         };
         self.rates_ready = !rates.is_empty();
         match calc::convert(&raw, &rates) {
-            Some(calc::Conversion::Done { result, detail }) => {
-                rows.push(Row { cat: Cat::Conversion, item: Item::Convert { result, detail } })
-            }
+            Some(calc::Conversion::Done { result, detail }) => rows.push(Row {
+                cat: Cat::Conversion,
+                item: Item::Convert { result, detail },
+            }),
             Some(calc::Conversion::NeedsRates) if self.settings.online => {
                 self.start_rates(ctx);
-                rows.push(Row { cat: Cat::Conversion, item: Item::PendingRates });
+                rows.push(Row {
+                    cat: Cat::Conversion,
+                    item: Item::PendingRates,
+                });
             }
             Some(calc::Conversion::NeedsRates) | None => {}
         }
@@ -343,14 +371,29 @@ impl Glint {
         for (i, a) in self.apps.iter().enumerate() {
             let s = index::score(&a.name_lc, &q)
                 .max(index::score(&a.generic_lc, &q) - 15)
-                .max(if q.len() >= 3 && a.keywords_lc.contains(&q) { 30 } else { 0 });
+                .max(if q.len() >= 3 && a.keywords_lc.contains(&q) {
+                    30
+                } else {
+                    0
+                });
             if s > 0 {
-                let cat = if a.settings { Cat::Settings } else { Cat::Applications };
+                let cat = if a.settings {
+                    Cat::Settings
+                } else {
+                    Cat::Applications
+                };
                 // Apps lead, as Spotlight's top hit usually is an app.
-                hits.push((s + 20 + self.boost(&format!("app:{}", a.id)), cat, Item::App(i), a.name.len()));
+                hits.push((
+                    s + 20 + self.boost(&format!("app:{}", a.id)),
+                    cat,
+                    Item::App(i),
+                    a.name.len(),
+                ));
             }
         }
-        if q.len() >= 3 && (q.starts_with("glint") || SETTINGS_WORDS.iter().any(|w| w.starts_with(q.as_str()))) {
+        if q.len() >= 3
+            && (q.starts_with("glint") || SETTINGS_WORDS.iter().any(|w| w.starts_with(q.as_str())))
+        {
             hits.push((90, Cat::Applications, Item::GlintSettings, 14));
         }
         {
@@ -369,7 +412,12 @@ impl Glint {
                 if s > 0 {
                     let boost = match boosts.is_empty() {
                         true => 0,
-                        false => f.path.to_str().and_then(|p| boosts.get(p)).copied().unwrap_or(0),
+                        false => f
+                            .path
+                            .to_str()
+                            .and_then(|p| boosts.get(p))
+                            .copied()
+                            .unwrap_or(0),
                     };
                     let s = s - i32::from(f.depth.min(12)) + boost - if f.hidden { 10 } else { 0 };
                     file_hits.push((s, f.name_lc.len() as u32, i as u32));
@@ -399,23 +447,47 @@ impl Glint {
         }
         hits.sort_by(|a, b| b.0.cmp(&a.0).then(a.3.cmp(&b.3)));
 
-        rows.push(Row { cat: Cat::Web, item: Item::Web(raw.clone()) });
+        rows.push(Row {
+            cat: Cat::Web,
+            item: Item::Web(raw.clone()),
+        });
         if !raw.is_empty() {
             if q == "notes" {
-                rows.push(Row { cat: Cat::Web, item: Item::WebQuery("notes app".to_string()) });
-                rows.push(Row { cat: Cat::Web, item: Item::WebQuery("notes from underground".to_string()) });
-                rows.push(Row { cat: Cat::Web, item: Item::WebQuery("noted aromas".to_string()) });
+                rows.push(Row {
+                    cat: Cat::Web,
+                    item: Item::WebQuery("notes app".to_string()),
+                });
+                rows.push(Row {
+                    cat: Cat::Web,
+                    item: Item::WebQuery("notes from underground".to_string()),
+                });
+                rows.push(Row {
+                    cat: Cat::Web,
+                    item: Item::WebQuery("noted aromas".to_string()),
+                });
             } else {
-                rows.push(Row { cat: Cat::Web, item: Item::WebQuery(format!("{raw} app")) });
+                rows.push(Row {
+                    cat: Cat::Web,
+                    item: Item::WebQuery(format!("{raw} app")),
+                });
             }
         }
-        if self.settings.online && (2..=40).contains(&raw.len()) && raw.chars().all(|c| c.is_ascii_alphabetic()) {
-            rows.push(Row { cat: Cat::Definition, item: Item::Define(raw.to_lowercase()) });
+        if self.settings.online
+            && (2..=40).contains(&raw.len())
+            && raw.chars().all(|c| c.is_ascii_alphabetic())
+        {
+            rows.push(Row {
+                cat: Cat::Definition,
+                item: Item::Define(raw.to_lowercase()),
+            });
         }
 
         self.more.clear();
         if let Some(top) = hits.first().cloned() {
-            rows.push(Row { cat: Cat::TopHit, item: top.2 });
+            rows.push(Row {
+                cat: Cat::TopHit,
+                item: top.2,
+            });
             let mut per_cat: HashMap<Cat, usize> = HashMap::new();
             for (_, cat, item, _) in hits.into_iter().skip(1) {
                 let n = per_cat.entry(cat).or_default();
@@ -516,7 +588,9 @@ impl Glint {
 
     /// Open the selected row. `reveal` shows files in their folder instead.
     pub fn activate(&mut self, ctx: &egui::Context, reveal: bool) {
-        let Some(row) = self.rows.get(self.sel).cloned() else { return };
+        let Some(row) = self.rows.get(self.sel).cloned() else {
+            return;
+        };
         let result = match &row.item {
             Item::App(i) if reveal => open::reveal(&self.apps[*i].path),
             Item::App(i) => {
@@ -544,14 +618,18 @@ impl Glint {
             Item::WebQuery(q) => open::xdg_open(&open::web_url(q)),
         };
         match result {
-            Ok(()) if self.screenshot.is_none() => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+            Ok(()) if self.screenshot.is_none() => {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close)
+            }
             Ok(()) => {}
             Err(e) => self.toast(ctx, &format!("Could not open: {e}")),
         }
     }
 
     fn jump_category(&mut self, down: bool) {
-        let Some(cur) = self.rows.get(self.sel).map(|r| r.cat) else { return };
+        let Some(cur) = self.rows.get(self.sel).map(|r| r.cat) else {
+            return;
+        };
         let idx = if down {
             self.rows.iter().position(|r| r.cat > cur)
         } else {
@@ -568,8 +646,12 @@ impl Glint {
     fn handle_keys(&mut self, ctx: &egui::Context) {
         // Esc closes an open colour picker first; only then does it leave settings.
         let popup = self.mode == Mode::Settings && egui::Popup::is_any_open(ctx);
-        let (toggle, esc) = ctx
-            .input_mut(|i| (i.consume_key(Modifiers::COMMAND, Key::Comma), !popup && i.consume_key(Modifiers::NONE, Key::Escape)));
+        let (toggle, esc) = ctx.input_mut(|i| {
+            (
+                i.consume_key(Modifiers::COMMAND, Key::Comma),
+                !popup && i.consume_key(Modifiers::NONE, Key::Escape),
+            )
+        });
         if self.mode == Mode::Settings {
             if toggle || esc {
                 self.leave_settings(ctx);
@@ -591,11 +673,14 @@ impl Glint {
         ctx.input_mut(|i| {
             k[0] = i.consume_key(Modifiers::COMMAND, Key::ArrowDown);
             k[1] = i.consume_key(Modifiers::COMMAND, Key::ArrowUp);
-            k[2] = i.consume_key(Modifiers::COMMAND, Key::Enter) || i.consume_key(Modifiers::COMMAND, Key::R);
+            k[2] = i.consume_key(Modifiers::COMMAND, Key::Enter)
+                || i.consume_key(Modifiers::COMMAND, Key::R);
             k[3] = i.consume_key(Modifiers::COMMAND, Key::B);
             k[4] = i.consume_key(Modifiers::COMMAND, Key::L);
-            k[5] = i.consume_key(Modifiers::NONE, Key::ArrowDown) || i.consume_key(Modifiers::NONE, Key::Tab);
-            k[6] = i.consume_key(Modifiers::NONE, Key::ArrowUp) || i.consume_key(Modifiers::SHIFT, Key::Tab);
+            k[5] = i.consume_key(Modifiers::NONE, Key::ArrowDown)
+                || i.consume_key(Modifiers::NONE, Key::Tab);
+            k[6] = i.consume_key(Modifiers::NONE, Key::ArrowUp)
+                || i.consume_key(Modifiers::SHIFT, Key::Tab);
             k[7] = i.consume_key(Modifiers::NONE, Key::Enter);
             k[8] = esc;
             k[9] = i.events.iter().any(|e| matches!(e, egui::Event::Copy));
@@ -658,14 +743,20 @@ impl Glint {
         // Window managers may refuse focus to a window that opens on its own;
         // ask for it until we have it, so typing goes straight into the bar.
         // Gives up after ~4 seconds, so an unfocused window doesn't redraw forever.
-        if self.screenshot.is_none() && !self.was_focused && focused != Some(true) && self.focus_tries < 120 {
+        if self.screenshot.is_none()
+            && !self.was_focused
+            && focused != Some(true)
+            && self.focus_tries < 120
+        {
             self.focus_tries += 1;
             if self.focus_tries % 6 == 1 {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
             }
             ctx.request_repaint_after(Duration::from_millis(30));
         }
-        if !self.centered && let Some(m) = monitor {
+        if !self.centered
+            && let Some(m) = monitor
+        {
             self.centered = true;
             let pos = Pos2::new(((m.x - WIDTH) / 2.0).max(0.0), (m.y * 0.22).round());
             ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos));
@@ -674,7 +765,9 @@ impl Glint {
         if self.screenshot.is_none() {
             match focused {
                 Some(true) => self.was_focused = true,
-                Some(false) if self.was_focused && self.mode == Mode::Search => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+                Some(false) if self.was_focused && self.mode == Mode::Search => {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close)
+                }
                 _ => {}
             }
         }
@@ -687,12 +780,16 @@ impl Glint {
             if now - t > SAVE_DELAY {
                 self.save_settings(ctx);
             } else {
-                ctx.request_repaint_after(Duration::from_millis(((SAVE_DELAY - (now - t)) * 1000.0) as u64 + 20));
+                ctx.request_repaint_after(Duration::from_millis(
+                    ((SAVE_DELAY - (now - t)) * 1000.0) as u64 + 20,
+                ));
             }
         }
         // The list is hidden in settings mode; `leave_settings` refreshes it.
         let in_search = self.mode == Mode::Search && !self.query.is_empty();
-        let grown = in_search && self.files.lock().unwrap().len() != self.seen_files && now - self.last_auto_refresh > 0.5;
+        let grown = in_search
+            && self.files.lock().unwrap().len() != self.seen_files
+            && now - self.last_auto_refresh > 0.5;
         if in_search && (grown || rates_ready != self.rates_ready) {
             self.last_auto_refresh = now;
             let sel = self.sel;
@@ -731,29 +828,33 @@ impl Glint {
 
     fn search_bar(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
-        ui.allocate_ui_with_layout(Vec2::new(ui.available_width(), BAR_H), Layout::left_to_right(Align::Center), |ui| {
-            ui.add_space(16.0);
-            let (r, _) = ui.allocate_exact_size(Vec2::splat(20.0), Sense::hover());
-            draw::magnifier(ui.painter(), r, MUTED);
-            ui.add_space(10.0);
-            let edit = egui::TextEdit::singleline(&mut self.query)
-                .font(FontId::proportional(22.0))
-                .frame(egui::Frame::NONE)
-                .hint_text(RichText::new("Search").size(22.0).color(MUTED))
-                .text_color(FG)
-                .desired_width(ui.available_width() - 20.0);
-            let resp = ui.add(edit);
-            // Only while the window itself has focus: re-requesting it every
-            // frame on an unfocused window rebuilds the X11 input-method
-            // context each frame, and then no keyboard (or focus) event ever
-            // reaches the app.
-            if ui.input(|i| i.focused) && !resp.has_focus() {
-                resp.request_focus();
-            }
-            if resp.changed() {
-                self.refresh(&ctx);
-            }
-        });
+        ui.allocate_ui_with_layout(
+            Vec2::new(ui.available_width(), BAR_H),
+            Layout::left_to_right(Align::Center),
+            |ui| {
+                ui.add_space(16.0);
+                let (r, _) = ui.allocate_exact_size(Vec2::splat(20.0), Sense::hover());
+                draw::magnifier(ui.painter(), r, MUTED);
+                ui.add_space(10.0);
+                let edit = egui::TextEdit::singleline(&mut self.query)
+                    .font(FontId::proportional(22.0))
+                    .frame(egui::Frame::NONE)
+                    .hint_text(RichText::new("Search").size(22.0).color(MUTED))
+                    .text_color(FG)
+                    .desired_width(ui.available_width() - 20.0);
+                let resp = ui.add(edit);
+                // Only while the window itself has focus: re-requesting it every
+                // frame on an unfocused window rebuilds the X11 input-method
+                // context each frame, and then no keyboard (or focus) event ever
+                // reaches the app.
+                if ui.input(|i| i.focused) && !resp.has_focus() {
+                    resp.request_focus();
+                }
+                if resp.changed() {
+                    self.refresh(&ctx);
+                }
+            },
+        );
     }
 
     /// Short status (copied, indexing) in a pill at the bottom right.
@@ -769,7 +870,11 @@ impl Glint {
         let galley = p.layout_no_wrap(text, FontId::proportional(12.0), FG);
         let size = galley.size() + Vec2::new(20.0, 10.0);
         let rect = Rect::from_min_size(full.max - size - Vec2::splat(12.0), size);
-        p.rect_filled(rect, 10, egui::Color32::from_rgba_premultiplied(16, 16, 18, 230));
+        p.rect_filled(
+            rect,
+            10,
+            egui::Color32::from_rgba_premultiplied(16, 16, 18, 230),
+        );
         p.galley(rect.min + Vec2::new(10.0, 5.0), galley, FG);
     }
 }
@@ -784,10 +889,19 @@ impl eframe::App for Glint {
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
         self.hook_frame += 1;
         if self.screenshot.is_some()
-            && let Some(&key) = self.hook_frame.checked_sub(20).and_then(|i| self.key_script.get(i as usize))
+            && let Some(&key) = self
+                .hook_frame
+                .checked_sub(20)
+                .and_then(|i| self.key_script.get(i as usize))
         {
             for pressed in [true, false] {
-                raw.events.push(egui::Event::Key { key, physical_key: None, pressed, repeat: false, modifiers: Modifiers::NONE });
+                raw.events.push(egui::Event::Key {
+                    key,
+                    physical_key: None,
+                    pressed,
+                    repeat: false,
+                    modifiers: Modifiers::NONE,
+                });
             }
         }
         // Navigation keys of the settings page never reach egui's own focus handling.
@@ -811,7 +925,10 @@ impl eframe::App for Glint {
         self.window_logic(&ctx);
 
         let window = ui.max_rect();
-        let full = Rect::from_min_size(window.min, Vec2::new(window.width(), self.height.min(window.height())));
+        let full = Rect::from_min_size(
+            window.min,
+            Vec2::new(window.width(), self.height.min(window.height())),
+        );
         draw::panel(ui.painter(), full, self.theme.bg);
         if self.mode == Mode::Settings {
             ui.scope_builder(UiBuilder::new().max_rect(full), |ui| self.settings_page(ui));
@@ -821,7 +938,9 @@ impl eframe::App for Glint {
         // The see-through area below the panel acts as "outside": a click there closes.
         let below = Rect::from_min_max(Pos2::new(window.left(), full.bottom()), window.max);
         if below.height() > 1.0
-            && ui.interact(below, ui.scope_id().with("outside"), Sense::click()).clicked()
+            && ui
+                .interact(below, ui.scope_id().with("outside"), Sense::click())
+                .clicked()
             && self.screenshot.is_none()
         {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -835,14 +954,22 @@ impl eframe::App for Glint {
         let top = full.top() + BAR_H;
         let line = Stroke::new(1.0, HAIRLINE);
         ui.painter().hline(full.x_range(), top, line);
-        let list_right = if self.show_preview { full.left() + LIST_W } else { full.right() };
-        let list_rect = Rect::from_min_max(Pos2::new(full.left(), top + 1.0), Pos2::new(list_right, full.bottom() - 8.0));
+        let list_right = if self.show_preview {
+            full.left() + LIST_W
+        } else {
+            full.right()
+        };
+        let list_rect = Rect::from_min_max(
+            Pos2::new(full.left(), top + 1.0),
+            Pos2::new(list_right, full.bottom() - 8.0),
+        );
         ui.scope_builder(UiBuilder::new().max_rect(list_rect), |ui| {
             ui.set_clip_rect(list_rect);
             self.list(ui);
         });
         if self.show_preview {
-            ui.painter().vline(list_rect.right(), list_rect.y_range(), line);
+            ui.painter()
+                .vline(list_rect.right(), list_rect.y_range(), line);
             let prev_rect = Rect::from_min_max(
                 Pos2::new(list_rect.right() + 20.0, top + 4.0),
                 Pos2::new(full.right() - 20.0, full.bottom() - 14.0),
@@ -866,10 +993,19 @@ pub fn run() -> eframe::Result {
         match a.as_str() {
             "--screenshot" => screenshot = args.next().map(PathBuf::from),
             "--settings" => open_settings = true,
-            "--keys" => keys = args.next().unwrap_or_default().split(',').filter_map(|k| parse_key(k.trim())).collect(),
+            "--keys" => {
+                keys = args
+                    .next()
+                    .unwrap_or_default()
+                    .split(',')
+                    .filter_map(|k| parse_key(k.trim()))
+                    .collect()
+            }
             "--query" => query = args.next().unwrap_or_default(),
             "-h" | "--help" => {
-                println!("glint [--query TEXT] [--settings] [--screenshot FILE.png [--keys Down,Right,...]]");
+                println!(
+                    "glint [--query TEXT] [--settings] [--screenshot FILE.png [--keys Down,Right,...]]"
+                );
                 return Ok(());
             }
             _ => {}
@@ -911,14 +1047,18 @@ pub fn run() -> eframe::Result {
             b.with_activate_ignoring_other_apps(false);
         }));
     }
-    eframe::run_native("Glint", options, Box::new(move |cc| {
-        let mut app = Glint::new(cc, screenshot, query);
-        app.key_script = keys;
-        if open_settings {
-            app.enter_settings();
-        }
-        Ok(Box::new(app))
-    }))
+    eframe::run_native(
+        "Glint",
+        options,
+        Box::new(move |cc| {
+            let mut app = Glint::new(cc, screenshot, query);
+            app.key_script = keys;
+            if open_settings {
+                app.enter_settings();
+            }
+            Ok(Box::new(app))
+        }),
+    )
 }
 
 /// Key names accepted by `--keys`.
@@ -945,7 +1085,9 @@ pub(crate) fn validate_root(input: &str, existing: &[PathBuf]) -> Result<PathBuf
     if !p.is_dir() {
         return Err("That folder does not exist".into());
     }
-    let c = p.canonicalize().map_err(|e| format!("Cannot read that folder: {e}"))?;
+    let c = p
+        .canonicalize()
+        .map_err(|e| format!("Cannot read that folder: {e}"))?;
     if index::is_denied_system(&c) {
         return Err("System folders such as /proc, /sys and /dev cannot be indexed".into());
     }

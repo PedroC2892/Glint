@@ -26,9 +26,28 @@ impl Default for Settings {
             show_hidden: false,
             outside_home: false,
             extra_roots: ["/media", "/mnt", "/run/media"].map(PathBuf::from).to_vec(),
-            skip_dirs: ["node_modules", "target", "__pycache__", "venv", "site-packages", "snap", ".npm", ".rustup", ".cargo", ".bun", ".nvm", ".gradle", ".m2", ".pnpm-store", "flatpak", "fnm", "pnpm", "pipx"]
-                .map(String::from)
-                .to_vec(),
+            skip_dirs: [
+                "node_modules",
+                "target",
+                "__pycache__",
+                "venv",
+                "site-packages",
+                "snap",
+                ".npm",
+                ".rustup",
+                ".cargo",
+                ".bun",
+                ".nvm",
+                ".gradle",
+                ".m2",
+                ".pnpm-store",
+                "flatpak",
+                "fnm",
+                "pnpm",
+                "pipx",
+            ]
+            .map(String::from)
+            .to_vec(),
             online: true,
         }
     }
@@ -63,7 +82,10 @@ fn load_from(path: &Path) -> (Settings, Option<String>) {
             (s, None)
         }
         Err(_) if !path.exists() => (Settings::default(), None),
-        Err(e) => (Settings::default(), Some(format!("Could not load {}: {e}", path.display()))),
+        Err(e) => (
+            Settings::default(),
+            Some(format!("Could not load {}: {e}", path.display())),
+        ),
     }
 }
 
@@ -122,7 +144,8 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let d = std::env::temp_dir().join(format!("glint-test-{name}-{}-{nanos}", std::process::id()));
+        let d =
+            std::env::temp_dir().join(format!("glint-test-{name}-{}-{nanos}", std::process::id()));
         std::fs::create_dir_all(&d).unwrap();
         d
     }
@@ -131,7 +154,12 @@ mod tests {
     fn round_trip() {
         let d = temp_dir("rt");
         let p = d.join("sub/config.json");
-        let s = Settings { accent: [1, 2, 3], opacity: 0.6, show_hidden: true, ..Settings::default() };
+        let s = Settings {
+            accent: [1, 2, 3],
+            opacity: 0.6,
+            show_hidden: true,
+            ..Settings::default()
+        };
         s.save_to(&p).unwrap();
         assert_eq!(load_from(&p), (s, None));
         let _ = std::fs::remove_dir_all(&d);
@@ -144,7 +172,13 @@ mod tests {
         std::fs::write(&p, r#"{"opacity": 0.7}"#).unwrap();
         let (s, err) = load_from(&p);
         assert!(err.is_none());
-        assert_eq!(s, Settings { opacity: 0.7, ..Settings::default() });
+        assert_eq!(
+            s,
+            Settings {
+                opacity: 0.7,
+                ..Settings::default()
+            }
+        );
         let _ = std::fs::remove_dir_all(&d);
     }
 
@@ -170,7 +204,10 @@ mod tests {
 
     #[test]
     fn sanitize_cleans_values() {
-        let mut s = Settings { opacity: 3.0, ..Settings::default() };
+        let mut s = Settings {
+            opacity: 3.0,
+            ..Settings::default()
+        };
         s.sanitize();
         assert_eq!(s.opacity, 1.0);
         s.opacity = f32::NAN;
@@ -186,9 +223,15 @@ mod tests {
     #[test]
     fn index_differs_only_for_index_fields() {
         let a = Settings::default();
-        let b = Settings { accent: [0, 0, 0], ..a.clone() };
+        let b = Settings {
+            accent: [0, 0, 0],
+            ..a.clone()
+        };
         assert!(!a.index_differs(&b));
-        let c = Settings { show_hidden: true, ..a.clone() };
+        let c = Settings {
+            show_hidden: true,
+            ..a.clone()
+        };
         assert!(a.index_differs(&c));
     }
 }

@@ -6,10 +6,10 @@
 //! pager/taskbar (source 2) are always honoured, so the launcher asks that way,
 //! and also asks to stay above other windows like a popover.
 
+use x11rb::CURRENT_TIME;
 use x11rb::connection::Connection;
 use x11rb::properties::WmHints;
 use x11rb::protocol::xproto::{ClientMessageEvent, ConnectionExt, EventMask, InputFocus};
-use x11rb::CURRENT_TIME;
 
 /// The X11 window id behind the app window, if it runs on X11.
 pub fn window_id(cc: &eframe::CreationContext) -> Option<u32> {
@@ -51,10 +51,17 @@ fn activate(window: u32) -> Result<(), Box<dyn std::error::Error>> {
     let atom = |name: &str| -> Result<u32, Box<dyn std::error::Error>> {
         Ok(conn.intern_atom(false, name.as_bytes())?.reply()?.atom)
     };
-    let (active, state, above) = (atom("_NET_ACTIVE_WINDOW")?, atom("_NET_WM_STATE")?, atom("_NET_WM_STATE_ABOVE")?);
+    let (active, state, above) = (
+        atom("_NET_ACTIVE_WINDOW")?,
+        atom("_NET_WM_STATE")?,
+        atom("_NET_WM_STATE_ABOVE")?,
+    );
 
     // Tell the window manager this window takes keyboard input.
-    let hints = WmHints { input: Some(true), ..WmHints::new() };
+    let hints = WmHints {
+        input: Some(true),
+        ..WmHints::new()
+    };
     hints.set(&conn, window)?;
 
     let mask = EventMask::SUBSTRUCTURE_REDIRECT | EventMask::SUBSTRUCTURE_NOTIFY;

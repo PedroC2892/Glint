@@ -84,10 +84,16 @@ pub fn reveal(path: &Path) -> std::io::Result<()> {
     let uri = format!("file://{}", percent_encode(&path.to_string_lossy(), b"/"));
     let ok = Command::new("gdbus")
         .args([
-            "call", "--session", "--dest", "org.freedesktop.FileManager1",
-            "--object-path", "/org/freedesktop/FileManager1",
-            "--method", "org.freedesktop.FileManager1.ShowItems",
-            &format!("['{uri}']"), "",
+            "call",
+            "--session",
+            "--dest",
+            "org.freedesktop.FileManager1",
+            "--object-path",
+            "/org/freedesktop/FileManager1",
+            "--method",
+            "org.freedesktop.FileManager1.ShowItems",
+            &format!("['{uri}']"),
+            "",
         ])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -130,7 +136,10 @@ fn agent() -> ureq::Agent {
 fn get_json(url: &str) -> Result<(u16, serde_json::Value), String> {
     let mut resp = agent().get(url).call().map_err(|e| e.to_string())?;
     let status = resp.status().as_u16();
-    let v = resp.body_mut().read_json().unwrap_or(serde_json::Value::Null);
+    let v = resp
+        .body_mut()
+        .read_json()
+        .unwrap_or(serde_json::Value::Null);
     Ok((status, v))
 }
 
@@ -138,13 +147,20 @@ fn get_json(url: &str) -> Result<(u16, serde_json::Value), String> {
 /// requested; nothing the person typed is sent.
 pub fn fetch_rates() -> Result<HashMap<String, f64>, String> {
     let (status, v) = get_json("https://open.er-api.com/v6/latest/USD")?;
-    let rates = v["rates"].as_object().ok_or(format!("Rate service answered {status}"))?;
-    Ok(rates.iter().filter_map(|(k, v)| Some((k.clone(), v.as_f64()?))).collect())
+    let rates = v["rates"]
+        .as_object()
+        .ok_or(format!("Rate service answered {status}"))?;
+    Ok(rates
+        .iter()
+        .filter_map(|(k, v)| Some((k.clone(), v.as_f64()?)))
+        .collect())
 }
 
 /// Definition of one English word (ASCII letters only, checked by the caller).
 pub fn fetch_definition(word: &str) -> Result<Definition, String> {
-    let (status, v) = get_json(&format!("https://api.dictionaryapi.dev/api/v2/entries/en/{word}"))?;
+    let (status, v) = get_json(&format!(
+        "https://api.dictionaryapi.dev/api/v2/entries/en/{word}"
+    ))?;
     if status == 404 {
         return Err(format!("No definition found for “{word}”."));
     }
@@ -175,7 +191,10 @@ mod tests {
     #[test]
     fn exec_lines_and_urls() {
         assert_eq!(split_exec("firefox %u"), vec!["firefox"]);
-        assert_eq!(split_exec(r#"sh -c "echo \"hi\" 100%%" %F"#), vec!["sh", "-c", "echo \"hi\" 100%"]);
+        assert_eq!(
+            split_exec(r#"sh -c "echo \"hi\" 100%%" %F"#),
+            vec!["sh", "-c", "echo \"hi\" 100%"]
+        );
         assert_eq!(split_exec("'my app' --flag"), vec!["my app", "--flag"]);
         assert_eq!(percent_encode("a b&c", b""), "a%20b%26c");
         assert_eq!(web_url("1+1"), "https://duckduckgo.com/?q=1%2B1");

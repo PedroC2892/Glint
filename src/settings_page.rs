@@ -3,9 +3,12 @@
 
 use crate::config::Settings;
 use crate::draw::{self, CARD_FILL, CARD_STROKE, FG, MUTED, SEL_FILL};
-use crate::ui::{Glint, BAR_H};
+use crate::ui::{BAR_H, Glint};
 use eframe::egui::text::{LayoutJob, TextFormat, TextWrapping};
-use eframe::egui::{self, Align, Color32, FontId, Id, Key, Layout, Pos2, Rect, RichText, ScrollArea, Sense, Stroke, UiBuilder, Vec2};
+use eframe::egui::{
+    self, Align, Color32, FontId, Id, Key, Layout, Pos2, Rect, RichText, ScrollArea, Sense, Stroke,
+    UiBuilder, Vec2,
+};
 use std::path::Path;
 
 const ROW_H: f32 = 40.0;
@@ -30,7 +33,11 @@ pub(crate) enum SRow {
 
 /// Number of rows currently shown (extra roots only appear with "outside home").
 pub(crate) fn row_count(st: &Settings) -> usize {
-    5 + if st.outside_home { st.extra_roots.len() + 1 } else { 0 } + 2
+    5 + if st.outside_home {
+        st.extra_roots.len() + 1
+    } else {
+        0
+    } + 2
 }
 
 /// The row at a position of the focus order; `None` past the end.
@@ -69,7 +76,11 @@ pub(crate) fn move_row(cur: usize, len: usize, delta: i32) -> usize {
 /// Steps opacity to the next 5% mark in `dir`, within 50..=100%.
 pub(crate) fn step_opacity(v: f32, dir: i32) -> f32 {
     let steps = v * 20.0;
-    let next = if dir > 0 { (steps + 1e-3).floor() + 1.0 } else { (steps - 1e-3).ceil() - 1.0 };
+    let next = if dir > 0 {
+        (steps + 1e-3).floor() + 1.0
+    } else {
+        (steps - 1e-3).ceil() - 1.0
+    };
     next.clamp(10.0, 20.0) / 20.0
 }
 
@@ -108,10 +119,26 @@ fn root_id() -> Id {
 }
 
 /// One-line galley that ends in an ellipsis when it does not fit.
-fn galley(ui: &egui::Ui, text: &str, size: f32, color: Color32, mono: bool, max_w: f32) -> std::sync::Arc<egui::Galley> {
-    let font = if mono { FontId::monospace(size) } else { FontId::proportional(size) };
+fn galley(
+    ui: &egui::Ui,
+    text: &str,
+    size: f32,
+    color: Color32,
+    mono: bool,
+    max_w: f32,
+) -> std::sync::Arc<egui::Galley> {
+    let font = if mono {
+        FontId::monospace(size)
+    } else {
+        FontId::proportional(size)
+    };
     let mut job = LayoutJob::single_section(text.to_owned(), TextFormat::simple(font, color));
-    job.wrap = TextWrapping { max_width: max_w.max(10.0), max_rows: 1, break_anywhere: true, overflow_character: Some('…') };
+    job.wrap = TextWrapping {
+        max_width: max_w.max(10.0),
+        max_rows: 1,
+        break_anywhere: true,
+        overflow_character: Some('…'),
+    };
     ui.painter().layout_job(job)
 }
 
@@ -134,7 +161,12 @@ fn shell(ui: &mut egui::Ui, cx: &mut Cx, h: f32, last: bool) -> (usize, Rect, eg
     let p = ui.painter();
     if idx == cx.focus {
         p.rect_filled(inner, 8, SEL_FILL);
-        p.rect_stroke(inner, 8, Stroke::new(1.0, cx.accent.gamma_multiply(0.7)), egui::StrokeKind::Inside);
+        p.rect_stroke(
+            inner,
+            8,
+            Stroke::new(1.0, cx.accent.gamma_multiply(0.7)),
+            egui::StrokeKind::Inside,
+        );
         if cx.scroll {
             ui.scroll_to_rect(rect.expand2(Vec2::new(0.0, 8.0)), None);
         }
@@ -142,7 +174,11 @@ fn shell(ui: &mut egui::Ui, cx: &mut Cx, h: f32, last: bool) -> (usize, Rect, eg
         p.rect_filled(inner, 8, SEL_FILL.gamma_multiply(0.45));
     }
     if !last {
-        p.hline(rect.left() + 12.0..=rect.right() - 12.0, rect.bottom() - 0.5, Stroke::new(1.0, CARD_STROKE));
+        p.hline(
+            rect.left() + 12.0..=rect.right() - 12.0,
+            rect.bottom() - 0.5,
+            Stroke::new(1.0, CARD_STROKE),
+        );
     }
     if resp.contains_pointer() && ui.input(|i| i.pointer.primary_pressed()) {
         cx.pressed = Some(idx);
@@ -160,15 +196,25 @@ fn labels(ui: &egui::Ui, c: Rect, reserve: f32, title: &str, sub: Option<&str>) 
     let ty = t.size().y;
     ui.painter().galley(Pos2::new(c.left(), y), t, FG);
     if let Some(s) = s {
-        ui.painter().galley(Pos2::new(c.left(), y + ty + 2.0), s, MUTED);
+        ui.painter()
+            .galley(Pos2::new(c.left(), y + ty + 2.0), s, MUTED);
     }
 }
 
 fn card(ui: &mut egui::Ui, h: f32, add: impl FnOnce(&mut egui::Ui)) {
     let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), Sense::hover());
     ui.painter().rect_filled(rect, 10, CARD_FILL);
-    ui.painter().rect_stroke(rect, 10, Stroke::new(1.0, CARD_STROKE), egui::StrokeKind::Inside);
-    let mut child = ui.new_child(UiBuilder::new().max_rect(rect).layout(Layout::top_down(Align::Min)));
+    ui.painter().rect_stroke(
+        rect,
+        10,
+        Stroke::new(1.0, CARD_STROKE),
+        egui::StrokeKind::Inside,
+    );
+    let mut child = ui.new_child(
+        UiBuilder::new()
+            .max_rect(rect)
+            .layout(Layout::top_down(Align::Min)),
+    );
     child.spacing_mut().item_spacing = Vec2::ZERO;
     add(&mut child);
 }
@@ -177,7 +223,12 @@ fn heading(ui: &mut egui::Ui, title: &str) {
     ui.add_space(12.0);
     ui.horizontal(|ui| {
         ui.add_space(4.0);
-        ui.label(RichText::new(title.to_uppercase()).size(11.0).strong().color(MUTED));
+        ui.label(
+            RichText::new(title.to_uppercase())
+                .size(11.0)
+                .strong()
+                .color(MUTED),
+        );
     });
     ui.add_space(5.0);
 }
@@ -185,10 +236,18 @@ fn heading(ui: &mut egui::Ui, title: &str) {
 /// Paints the pill switch at the right edge of a row.
 fn switch(ui: &egui::Ui, c: Rect, id: &str, on: bool, accent: Color32) {
     let t = ui.ctx().animate_bool(Id::unique(id), on);
-    let r = Rect::from_center_size(Pos2::new(c.right() - 18.0, c.center().y), Vec2::new(36.0, 20.0));
+    let r = Rect::from_center_size(
+        Pos2::new(c.right() - 18.0, c.center().y),
+        Vec2::new(36.0, 20.0),
+    );
     let p = ui.painter();
     p.rect_filled(r, 10, OFF.lerp_to_gamma(accent, t));
-    p.rect_stroke(r, 10, Stroke::new(1.0, OFF_RING.gamma_multiply(1.0 - t)), egui::StrokeKind::Inside);
+    p.rect_stroke(
+        r,
+        10,
+        Stroke::new(1.0, OFF_RING.gamma_multiply(1.0 - t)),
+        egui::StrokeKind::Inside,
+    );
     let x = r.left() + 10.0 + 16.0 * t;
     p.circle_filled(Pos2::new(x, r.center().y), 8.0, Color32::WHITE);
 }
@@ -207,15 +266,28 @@ impl Glint {
     /// focus movement and Enter/Space "clicks" never see them. Text rows keep
     /// Left/Right/Enter/Space for editing; Up/Down/Tab are always taken.
     pub(crate) fn take_nav_keys(&mut self, raw: &mut egui::RawInput) {
-        let text = matches!(row_at(&self.settings, self.settings_row), Some(SRow::Custom | SRow::AddFolder));
+        let text = matches!(
+            row_at(&self.settings, self.settings_row),
+            Some(SRow::Custom | SRow::AddFolder)
+        );
         let queue = &mut self.nav_keys;
         raw.events.retain(|e| {
-            let egui::Event::Key { key, pressed, modifiers: m, .. } = e else { return true };
+            let egui::Event::Key {
+                key,
+                pressed,
+                modifiers: m,
+                ..
+            } = e
+            else {
+                return true;
+            };
             let plain = !(m.ctrl || m.alt || m.command || m.mac_cmd);
             let take = match key {
                 Key::ArrowUp | Key::ArrowDown => plain && !m.shift,
                 Key::Tab => plain,
-                Key::ArrowLeft | Key::ArrowRight | Key::Enter | Key::Space => plain && !m.shift && !text,
+                Key::ArrowLeft | Key::ArrowRight | Key::Enter | Key::Space => {
+                    plain && !m.shift && !text
+                }
                 _ => false,
             };
             if take && *pressed {
@@ -260,7 +332,10 @@ impl Glint {
         // nothing else may keep it.
         let row = row_at(&self.settings, self.settings_row);
         ctx.memory_mut(|m| {
-            for (id, want) in [(hex_id(), row == Some(SRow::Custom)), (root_id(), row == Some(SRow::AddFolder))] {
+            for (id, want) in [
+                (hex_id(), row == Some(SRow::Custom)),
+                (root_id(), row == Some(SRow::AddFolder)),
+            ] {
                 if want {
                     m.request_focus(id);
                 } else {
@@ -280,7 +355,8 @@ impl Glint {
     fn adjust_row(&mut self, ctx: &egui::Context, row: Option<SRow>, dir: i32, act: bool) {
         match row {
             Some(SRow::Accent) if dir != 0 || act => {
-                self.settings.accent = cycle_preset(self.settings.accent, if dir != 0 { dir } else { 1 });
+                self.settings.accent =
+                    cycle_preset(self.settings.accent, if dir != 0 { dir } else { 1 });
                 self.touch(ctx, true);
             }
             Some(SRow::Opacity) if dir != 0 => {
@@ -316,15 +392,27 @@ impl Glint {
     pub(crate) fn settings_page(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         let full = ui.max_rect();
-        ui.allocate_ui_with_layout(Vec2::new(full.width(), BAR_H), Layout::left_to_right(Align::Center), |ui| {
-            ui.add_space(20.0);
-            ui.label(RichText::new("Settings").size(20.0).color(FG));
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+        ui.allocate_ui_with_layout(
+            Vec2::new(full.width(), BAR_H),
+            Layout::left_to_right(Align::Center),
+            |ui| {
                 ui.add_space(20.0);
-                ui.label(RichText::new("↑↓ move · ←→ adjust · Enter toggle · Esc back").size(12.0).color(MUTED));
-            });
-        });
-        ui.painter().hline(full.x_range(), full.top() + BAR_H, Stroke::new(1.0, draw::HAIRLINE));
+                ui.label(RichText::new("Settings").size(20.0).color(FG));
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    ui.add_space(20.0);
+                    ui.label(
+                        RichText::new("↑↓ move · ←→ adjust · Enter toggle · Esc back")
+                            .size(12.0)
+                            .color(MUTED),
+                    );
+                });
+            },
+        );
+        ui.painter().hline(
+            full.x_range(),
+            full.top() + BAR_H,
+            Stroke::new(1.0, draw::HAIRLINE),
+        );
         let body = Rect::from_min_max(
             Pos2::new(full.left() + SIDE, full.top() + BAR_H + 1.0),
             Pos2::new(full.right() - SIDE, full.bottom() - 6.0),
@@ -591,7 +679,10 @@ mod tests {
 
     #[test]
     fn visible_rows_follow_settings() {
-        let mut st = Settings { extra_roots: vec!["/mnt".into(), "/media".into()], ..Settings::default() };
+        let mut st = Settings {
+            extra_roots: vec!["/mnt".into(), "/media".into()],
+            ..Settings::default()
+        };
         st.outside_home = false;
         assert_eq!(row_count(&st), 7);
         assert_eq!(row_at(&st, 5), Some(SRow::Online));

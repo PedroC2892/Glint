@@ -31,21 +31,25 @@ fn current_theme() -> Option<String> {
         .map(PathBuf::from)
         .filter(|p| p.is_absolute())
         .unwrap_or_else(|| index::home().join(".config"));
-    let kde = std::fs::read_to_string(config.join("kdeglobals")).ok().and_then(|text| {
-        let mut in_icons = false;
-        text.lines().find_map(|l| {
-            let l = l.trim();
-            if l.starts_with('[') {
-                in_icons = l == "[Icons]";
-                None
-            } else if in_icons {
-                l.strip_prefix("Theme=").map(str::to_string)
-            } else {
-                None
-            }
-        })
-    });
-    let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default().to_lowercase();
+    let kde = std::fs::read_to_string(config.join("kdeglobals"))
+        .ok()
+        .and_then(|text| {
+            let mut in_icons = false;
+            text.lines().find_map(|l| {
+                let l = l.trim();
+                if l.starts_with('[') {
+                    in_icons = l == "[Icons]";
+                    None
+                } else if in_icons {
+                    l.strip_prefix("Theme=").map(str::to_string)
+                } else {
+                    None
+                }
+            })
+        });
+    let desktop = std::env::var("XDG_CURRENT_DESKTOP")
+        .unwrap_or_default()
+        .to_lowercase();
     if desktop.contains("kde") && kde.is_some() {
         return kde;
     }
@@ -53,13 +57,22 @@ fn current_theme() -> Option<String> {
         .args(["get", "org.gnome.desktop.interface", "icon-theme"])
         .output()
         .ok()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().trim_matches('\'').to_string())
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .trim()
+                .trim_matches('\'')
+                .to_string()
+        })
         .filter(|s| !s.is_empty());
     gnome.or(kde)
 }
 
 fn theme_dirs(bases: &[PathBuf], name: &str) -> Vec<PathBuf> {
-    bases.iter().map(|b| b.join(name)).filter(|d| d.is_dir()).collect()
+    bases
+        .iter()
+        .map(|b| b.join(name))
+        .filter(|d| d.is_dir())
+        .collect()
 }
 
 /// Rank an icon sub-directory: scalable first, then sizes near 64 px,
@@ -79,7 +92,11 @@ fn rank(dir: &Path) -> u32 {
     }
     let size = parts
         .iter()
-        .find_map(|p| p.split(['x', '@']).next().and_then(|n| n.parse::<i32>().ok()))
+        .find_map(|p| {
+            p.split(['x', '@'])
+                .next()
+                .and_then(|n| n.parse::<i32>().ok())
+        })
         .unwrap_or(16);
     1 + (size - 64).unsigned_abs()
 }
@@ -157,22 +174,37 @@ impl IconTheme {
         let mut generic = HashMap::new();
         for d in index::data_dirs() {
             // globs2 is sorted by weight, highest first: keep the first match.
-            for line in std::fs::read_to_string(d.join("mime/globs2")).unwrap_or_default().lines() {
+            for line in std::fs::read_to_string(d.join("mime/globs2"))
+                .unwrap_or_default()
+                .lines()
+            {
                 let mut f = line.splitn(3, ':');
                 if let (Some(_), Some(mime), Some(glob)) = (f.next(), f.next(), f.next())
                     && let Some(ext) = glob.strip_prefix("*.")
                     && !ext.contains(['*', '?', '['])
                 {
-                    ext_mime.entry(ext.to_lowercase()).or_insert_with(|| mime.to_string());
+                    ext_mime
+                        .entry(ext.to_lowercase())
+                        .or_insert_with(|| mime.to_string());
                 }
             }
-            for line in std::fs::read_to_string(d.join("mime/generic-icons")).unwrap_or_default().lines() {
+            for line in std::fs::read_to_string(d.join("mime/generic-icons"))
+                .unwrap_or_default()
+                .lines()
+            {
                 if let Some((mime, icon)) = line.split_once(':') {
-                    generic.entry(mime.to_string()).or_insert_with(|| icon.to_string());
+                    generic
+                        .entry(mime.to_string())
+                        .or_insert_with(|| icon.to_string());
                 }
             }
         }
-        Self { dirs, cache: HashMap::new(), ext_mime, generic }
+        Self {
+            dirs,
+            cache: HashMap::new(),
+            ext_mime,
+            generic,
+        }
     }
 
     /// Path of one icon by name (or an absolute path), cached.
@@ -188,7 +220,10 @@ impl IconTheme {
             p.is_file().then(|| p.to_path_buf())
         } else {
             self.dirs.iter().find_map(|d| {
-                ["svg", "png"].iter().map(|e| d.join(format!("{name}.{e}"))).find(|f| f.is_file())
+                ["svg", "png"]
+                    .iter()
+                    .map(|e| d.join(format!("{name}.{e}")))
+                    .find(|f| f.is_file())
             })
         };
         self.cache.insert(name.to_string(), found.clone());
@@ -240,7 +275,9 @@ mod tests {
     #[test]
     fn directory_ranking() {
         assert_eq!(rank(Path::new("/t/kora/places/scalable")), 0);
-        assert!(rank(Path::new("/t/hicolor/64x64/apps")) < rank(Path::new("/t/hicolor/16x16/apps")));
+        assert!(
+            rank(Path::new("/t/hicolor/64x64/apps")) < rank(Path::new("/t/hicolor/16x16/apps"))
+        );
         assert!(rank(Path::new("/t/breeze/apps/48")) < rank(Path::new("/t/breeze/apps/16")));
         assert_eq!(rank(Path::new("/t/kora/apps/symbolic")), 1000);
     }

@@ -33,7 +33,9 @@ pub struct FileEntry {
 }
 
 pub fn home() -> PathBuf {
-    std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/"))
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/"))
 }
 
 pub fn data_home() -> PathBuf {
@@ -50,7 +52,11 @@ pub fn data_dirs() -> Vec<PathBuf> {
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "/usr/local/share:/usr/share".into());
     std::iter::once(data_home())
-        .chain(dirs.split(':').map(PathBuf::from).filter(|p| p.is_absolute()))
+        .chain(
+            dirs.split(':')
+                .map(PathBuf::from)
+                .filter(|p| p.is_absolute()),
+        )
         .collect()
 }
 
@@ -66,7 +72,9 @@ pub fn load_apps() -> Vec<AppEntry> {
         let root = dir.join("applications");
         let mut stack = vec![root.clone()];
         while let Some(d) = stack.pop() {
-            let Ok(rd) = std::fs::read_dir(&d) else { continue };
+            let Ok(rd) = std::fs::read_dir(&d) else {
+                continue;
+            };
             for e in rd.flatten() {
                 let p = e.path();
                 if e.file_type().is_ok_and(|t| t.is_dir()) {
@@ -77,7 +85,11 @@ pub fn load_apps() -> Vec<AppEntry> {
                     continue;
                 }
                 // Desktop file id: path below applications/ with '/' replaced by '-'.
-                let id = p.strip_prefix(&root).unwrap_or(&p).to_string_lossy().replace('/', "-");
+                let id = p
+                    .strip_prefix(&root)
+                    .unwrap_or(&p)
+                    .to_string_lossy()
+                    .replace('/', "-");
                 if !seen.insert(id.clone()) {
                     continue; // An earlier data dir overrides this one.
                 }
@@ -99,7 +111,8 @@ fn parse_desktop(path: &Path, id: String, desktops: &[String]) -> Option<AppEntr
         if line.starts_with('[') {
             in_main = line == "[Desktop Entry]";
         } else if in_main && let Some((k, v)) = line.split_once('=') {
-            kv.entry(k.trim().to_string()).or_insert_with(|| v.trim().to_string());
+            kv.entry(k.trim().to_string())
+                .or_insert_with(|| v.trim().to_string());
         }
     }
     let get = |k: &str| kv.get(k).cloned().unwrap_or_default();
@@ -107,7 +120,11 @@ fn parse_desktop(path: &Path, id: String, desktops: &[String]) -> Option<AppEntr
     if get("Type") != "Application" || flag("Hidden") || get("Exec").is_empty() {
         return None;
     }
-    let in_list = |k: &str| get(k).split(';').any(|d| desktops.contains(&d.to_lowercase()));
+    let in_list = |k: &str| {
+        get(k)
+            .split(';')
+            .any(|d| desktops.contains(&d.to_lowercase()))
+    };
     if (kv.contains_key("OnlyShowIn") && !in_list("OnlyShowIn")) || in_list("NotShowIn") {
         return None;
     }
@@ -117,7 +134,13 @@ fn parse_desktop(path: &Path, id: String, desktops: &[String]) -> Option<AppEntr
     let settings_cat = get("Categories")
         .split(';')
         .any(|c| c == "Settings" || c == "X-GNOME-Settings-Panel")
-        || ["systemsettings", "gnome-control-center", "kcmshell6", "kcmshell5"].contains(&launcher);
+        || [
+            "systemsettings",
+            "gnome-control-center",
+            "kcmshell6",
+            "kcmshell5",
+        ]
+        .contains(&launcher);
     // Hidden entries are kept only when they are settings panels.
     let settings = flag("NoDisplay") && settings_cat;
     if flag("NoDisplay") && !settings {
@@ -146,7 +169,14 @@ fn parse_desktop(path: &Path, id: String, desktops: &[String]) -> Option<AppEntr
 const MAX_FILES: usize = 400_000;
 const MAX_DEPTH: u8 = 10;
 /// Hidden directories that are never entered, even when hidden files are shown.
-const NEVER_HIDDEN: &[&str] = &[".git", ".cache", ".ssh", ".gnupg", ".password-store", ".pki"];
+const NEVER_HIDDEN: &[&str] = &[
+    ".git",
+    ".cache",
+    ".ssh",
+    ".gnupg",
+    ".password-store",
+    ".pki",
+];
 
 pub struct IndexOpts {
     pub roots: Vec<PathBuf>,
@@ -158,7 +188,11 @@ impl IndexOpts {
     /// Home first, then (if enabled) existing extra roots; canonical, unique, not
     /// nested in another root and not a system pseudo path.
     pub fn from_settings(s: &crate::config::Settings) -> Self {
-        let extras = s.extra_roots.iter().filter(|r| s.outside_home && r.is_dir()).cloned();
+        let extras = s
+            .extra_roots
+            .iter()
+            .filter(|r| s.outside_home && r.is_dir())
+            .cloned();
         let mut all: Vec<PathBuf> = Vec::new();
         for r in std::iter::once(home()).chain(extras) {
             let Ok(r) = r.canonicalize() else { continue };
@@ -172,7 +206,11 @@ impl IndexOpts {
             .filter(|(i, r)| *i == 0 || !all.iter().any(|o| o != *r && r.starts_with(o)))
             .map(|(_, r)| r.clone())
             .collect();
-        Self { roots, show_hidden: s.show_hidden, skip_dirs: s.skip_dirs.clone() }
+        Self {
+            roots,
+            show_hidden: s.show_hidden,
+            skip_dirs: s.skip_dirs.clone(),
+        }
     }
 }
 
@@ -210,7 +248,9 @@ impl<F: Fn()> Walk<'_, F> {
             if self.total >= MAX_FILES {
                 break;
             }
-            let Ok(rd) = std::fs::read_dir(&dir) else { continue };
+            let Ok(rd) = std::fs::read_dir(&dir) else {
+                continue;
+            };
             for e in rd.flatten() {
                 let name = e.file_name();
                 let name = name.to_string_lossy();
@@ -233,10 +273,20 @@ impl<F: Fn()> Walk<'_, F> {
                     && !self.deny.contains(&path)
                     && !self.opts.roots.contains(&path)
                 {
-                    let target = if dot && !in_hidden { &mut *later } else { &mut *stack };
+                    let target = if dot && !in_hidden {
+                        &mut *later
+                    } else {
+                        &mut *stack
+                    };
                     target.push((path.clone(), depth + 1, hidden));
                 }
-                self.batch.push(FileEntry { path, name_lc: name.to_lowercase(), is_dir, depth, hidden });
+                self.batch.push(FileEntry {
+                    path,
+                    name_lc: name.to_lowercase(),
+                    is_dir,
+                    depth,
+                    hidden,
+                });
                 self.total += 1;
             }
             if self.batch.len() > 4000 || self.total >= MAX_FILES {
@@ -264,8 +314,19 @@ pub fn index_files(
 ) {
     let h = home();
     let h = h.canonicalize().unwrap_or(h);
-    let deny = [h.join(".local/share/keyrings"), h.join(".local/share/Trash")];
-    let mut w = Walk { opts: &opts, deny, out: &out, cancel: &cancel, tick: &tick, batch: Vec::new(), total: 0 };
+    let deny = [
+        h.join(".local/share/keyrings"),
+        h.join(".local/share/Trash"),
+    ];
+    let mut w = Walk {
+        opts: &opts,
+        deny,
+        out: &out,
+        cancel: &cancel,
+        tick: &tick,
+        batch: Vec::new(),
+        total: 0,
+    };
     let mut later = Vec::new();
     for root in &opts.roots {
         if !w.run(&mut vec![(root.clone(), 0, false)], &mut later) {
@@ -283,7 +344,11 @@ pub fn index_files(
 /// Name match score: exact > prefix > word prefix > initials > substring.
 /// Runs for every indexed name on each keystroke, so it never allocates.
 pub fn score(name_lc: &str, q: &str) -> i32 {
-    let words = || name_lc.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty());
+    let words = || {
+        name_lc
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|w| !w.is_empty())
+    };
     if !name_lc.contains(q) {
         // Only initials ("vsc" for "visual studio code") can match now.
         let mut initials = words().filter_map(|w| w.chars().next());
@@ -315,7 +380,9 @@ const DOC_EXT: &[&str] = &[
     "pdf", "txt", "md", "doc", "docx", "odt", "rtf", "xls", "xlsx", "ods", "ppt", "pptx", "odp",
     "csv", "epub", "tex", "html", "json", "toml", "yaml", "yml", "log",
 ];
-const IMG_EXT: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "tif", "tiff", "heic"];
+const IMG_EXT: &[&str] = &[
+    "png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "tif", "tiff", "heic",
+];
 const MUSIC_EXT: &[&str] = &["mp3", "flac", "ogg", "opus", "wav", "m4a", "aac"];
 const MOVIE_EXT: &[&str] = &["mp4", "mkv", "webm", "mov", "avi", "m4v"];
 const TEXT_EXT: &[&str] = &[
@@ -324,7 +391,9 @@ const TEXT_EXT: &[&str] = &[
 ];
 
 pub fn ext_lc(p: &Path) -> String {
-    p.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default()
+    p.extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .unwrap_or_default()
 }
 
 pub fn kind(p: &Path, is_dir: bool) -> Kind {
@@ -415,8 +484,14 @@ pub fn file_info(path: &Path, is_dir: bool) -> FileInfo {
     let meta = std::fs::metadata(path).ok();
     let mut text = None;
     // Hidden files may hold secrets (.env, .netrc): show metadata only.
-    let hidden = path.components().any(|c| c.as_os_str().as_encoded_bytes().starts_with(b"."));
-    if !is_dir && !hidden && TEXT_EXT.contains(&ext_lc(path).as_str()) && let Ok(f) = std::fs::File::open(path) {
+    let hidden = path
+        .components()
+        .any(|c| c.as_os_str().as_encoded_bytes().starts_with(b"."));
+    if !is_dir
+        && !hidden
+        && TEXT_EXT.contains(&ext_lc(path).as_str())
+        && let Ok(f) = std::fs::File::open(path)
+    {
         let mut buf = Vec::new();
         let _ = f.take(3000).read_to_end(&mut buf);
         text = Some(String::from_utf8_lossy(&buf).into_owned());
@@ -439,7 +514,11 @@ pub fn format_size(b: u64) -> String {
         v /= 1000.0;
         i += 1;
     }
-    if i == 0 { format!("{b} bytes") } else { format!("{v:.1} {}", units[i]) }
+    if i == 0 {
+        format!("{b} bytes")
+    } else {
+        format!("{v:.1} {}", units[i])
+    }
 }
 
 /// Local UTC offset in seconds, asked once from `date` (0 if unavailable).
@@ -447,12 +526,17 @@ pub fn format_size(b: u64) -> String {
 // half of the year by an hour; read /etc/localtime rules if that matters.
 pub fn utc_offset() -> i64 {
     let out = std::process::Command::new("date").arg("+%z").output();
-    let s = out.map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
+    let s = out
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default();
     let (sign, digits) = match s.strip_prefix('-') {
         Some(d) => (-1, d),
         None => (1, s.trim_start_matches('+')),
     };
-    match (digits.get(0..2).and_then(|h| h.parse::<i64>().ok()), digits.get(2..4).and_then(|m| m.parse::<i64>().ok())) {
+    match (
+        digits.get(0..2).and_then(|h| h.parse::<i64>().ok()),
+        digits.get(2..4).and_then(|m| m.parse::<i64>().ok()),
+    ) {
         (Some(h), Some(m)) if digits.len() == 4 => sign * (h * 3600 + m * 60),
         _ => 0,
     }
@@ -473,12 +557,20 @@ fn civil(days: i64) -> (i64, i64, i64) {
 
 /// "today, 9:47 pm", "yesterday, 8:02 am" or "28/03/2024, 8:33 am" in local time.
 pub fn format_time(t: SystemTime, offset: i64, now: SystemTime) -> String {
-    let local = |t: SystemTime| t.duration_since(SystemTime::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64) + offset;
+    let local = |t: SystemTime| {
+        t.duration_since(SystemTime::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs() as i64)
+            + offset
+    };
     let (secs, now_secs) = (local(t), local(now));
     let (day, today) = (secs.div_euclid(86_400), now_secs.div_euclid(86_400));
     let minutes = secs.rem_euclid(86_400) / 60;
     let (h, m) = (minutes / 60, minutes % 60);
-    let clock = format!("{}:{m:02} {}", if h % 12 == 0 { 12 } else { h % 12 }, if h < 12 { "am" } else { "pm" });
+    let clock = format!(
+        "{}:{m:02} {}",
+        if h % 12 == 0 { 12 } else { h % 12 },
+        if h < 12 { "am" } else { "pm" }
+    );
     match today - day {
         0 => format!("today, {clock}"),
         1 => format!("yesterday, {clock}"),
@@ -506,7 +598,10 @@ mod tests {
         assert_eq!(format_time(t, 0, at(1_800_000_000)), "14/11/2023, 10:13 pm");
         assert_eq!(format_time(t, 0, t), "today, 10:13 pm");
         assert_eq!(format_time(t, 3 * 3600, t), "today, 1:13 am");
-        assert_eq!(format_time(t, 0, at(1_700_000_000 + 86_400)), "yesterday, 10:13 pm");
+        assert_eq!(
+            format_time(t, 0, at(1_700_000_000 + 86_400)),
+            "yesterday, 10:13 pm"
+        );
         assert_eq!(format_size(1_234_567), "1.2 MB");
     }
 
@@ -536,12 +631,23 @@ mod tests {
         };
         let out = Arc::new(Mutex::new(Vec::new()));
         let done = Arc::new(AtomicBool::new(false));
-        index_files(opts, out.clone(), done.clone(), Arc::new(AtomicBool::new(cancelled)), || {});
+        index_files(
+            opts,
+            out.clone(),
+            done.clone(),
+            Arc::new(AtomicBool::new(cancelled)),
+            || {},
+        );
         let mut v: Vec<_> = out
             .lock()
             .unwrap()
             .iter()
-            .map(|e| (e.path.file_name().unwrap().to_string_lossy().into_owned(), e.hidden))
+            .map(|e| {
+                (
+                    e.path.file_name().unwrap().to_string_lossy().into_owned(),
+                    e.hidden,
+                )
+            })
             .collect();
         v.sort();
         (v, done.load(Ordering::Relaxed))
@@ -552,14 +658,26 @@ mod tests {
     #[ignore]
     fn bench_index_home() {
         for show_hidden in [false, true] {
-            let s = crate::config::Settings { show_hidden, ..Default::default() };
+            let s = crate::config::Settings {
+                show_hidden,
+                ..Default::default()
+            };
             let out = Arc::new(Mutex::new(Vec::new()));
             let done = Arc::new(AtomicBool::new(false));
             let t = std::time::Instant::now();
-            index_files(IndexOpts::from_settings(&s), out.clone(), done.clone(), Arc::new(AtomicBool::new(false)), || {});
+            index_files(
+                IndexOpts::from_settings(&s),
+                out.clone(),
+                done.clone(),
+                Arc::new(AtomicBool::new(false)),
+                || {},
+            );
             let ms = t.elapsed().as_millis();
             assert!(done.load(Ordering::Relaxed));
-            println!("show_hidden={show_hidden}: {} entries, {ms} ms", out.lock().unwrap().len());
+            println!(
+                "show_hidden={show_hidden}: {} entries, {ms} ms",
+                out.lock().unwrap().len()
+            );
         }
     }
 
@@ -609,7 +727,8 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let tmp_a = std::env::temp_dir().join(format!("glint-test-opts-{}-{}", std::process::id(), nanos));
+        let tmp_a =
+            std::env::temp_dir().join(format!("glint-test-opts-{}-{}", std::process::id(), nanos));
         let sub = tmp_a.join("sub");
         std::fs::create_dir_all(&sub).unwrap();
 
