@@ -556,9 +556,9 @@ impl Glint {
 
                     if st.outside_home {
                         let mut remove = None;
-                        for k in 0..st.extra_roots.len() {
+                        for (k, root) in st.extra_roots.iter().enumerate() {
                             let (_, c, _) = shell(ui, cx, ROW_H, false);
-                            let path = st.extra_roots[k].display().to_string();
+                            let path = root.display().to_string();
                             let g = galley(ui, &path, 12.5, FG, true, c.width() - 80.0);
                             ui.painter().galley(Pos2::new(c.left(), c.center().y - g.size().y / 2.0), g, FG);
                             let b = Rect::from_center_size(Pos2::new(c.right() - 28.0, c.center().y), Vec2::new(56.0, 26.0));
