@@ -6,10 +6,39 @@
 //! pager/taskbar (source 2) are always honoured, so the launcher asks that way,
 //! and also asks to stay above other windows like a popover.
 
+use std::sync::Mutex;
 use x11rb::CURRENT_TIME;
 use x11rb::connection::Connection;
 use x11rb::properties::WmHints;
 use x11rb::protocol::xproto::{ClientMessageEvent, ConnectionExt, EventMask, InputFocus};
+use x11rb::rust_connection::RustConnection;
+
+static X11_CONN: Mutex<Option<RustConnection>> = Mutex::new(None);
+
+fn with_conn<F>(mut f: F)
+where
+    F: FnMut(&RustConnection) -> Result<(), Box<dyn std::error::Error>>,
+{
+    let mut lock = match X11_CONN.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    if lock.is_none()
+        && let Ok((conn, _)) = x11rb::connect(None)
+    {
+        *lock = Some(conn);
+    }
+    if let Some(conn) = lock.as_ref() {
+        if f(conn).is_ok() {
+            return;
+        }
+        // If operation failed (e.g. stale connection), reconnect once.
+        if let Ok((new_conn, _)) = x11rb::connect(None) {
+            let _ = f(&new_conn);
+            *lock = Some(new_conn);
+        }
+    }
+}
 
 /// The X11 window id behind the app window, if it runs on X11.
 pub fn window_id(cc: &eframe::CreationContext) -> Option<u32> {
@@ -76,4 +105,32 @@ fn activate(window: u32) -> Result<(), Box<dyn std::error::Error>> {
     conn.set_input_focus(InputFocus::PARENT, window, CURRENT_TIME)?;
     conn.flush()?;
     Ok(())
+}
+
+/// Unmap (hide) the window directly via X11.
+///
+/// eframe's `ViewportCommand::Visible(false)` is only processed during
+/// `App::update`, which may never be called while the window is hidden or the
+/// event loop is idling. Calling `UnmapWindow` directly through x11rb
+/// guarantees the window disappears immediately.
+pub fn unmap_window(window: u32) {
+    with_conn(|conn| {
+        conn.unmap_window(window)?;
+        conn.flush()?;
+        Ok(())
+    });
+}
+
+/// Map the window and activate it (raise + focus) for a daemon show.
+///
+/// Like `unmap_window`, this bypasses the eframe event loop so the window
+/// becomes visible immediately even if `App::update` hasn't run yet.
+/// After mapping, `activate_in_background` drives the focus retry loop.
+pub fn map_and_activate(window: u32) {
+    with_conn(|conn| {
+        conn.map_window(window)?;
+        conn.flush()?;
+        Ok(())
+    });
+    activate_in_background(window);
 }

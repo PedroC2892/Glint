@@ -71,7 +71,7 @@ Package caches and runtimes (npm, cargo, rustup, flatpak, …) are skipped by de
 
 ## Launching with a Keyboard Shortcut (Win + Space)
 
-Glint is designed to be summoned instantly with **Win + Space** (Super + Space):
+Glint is designed to be summoned instantly with **Win + Space** (Super + Space). When launched, `glint` sends a lightweight IPC message to the resident daemon process, opening the search bar in ~20–25 ms without any cold-start delay. If no daemon is running, it starts one automatically.
 
 1. **Automatic setup**: `./install.sh` automatically registers `Win + Space` / `Meta + Space`:
    - On **KDE Plasma**: registered via `X-KDE-Shortcuts=Meta+Space` in the desktop entry.
@@ -93,7 +93,10 @@ cargo build --release
 
 Options:
 
-- `--query TEXT` – start with a search already typed in.
+- `--daemon` – start as a background daemon (starts hidden, binds IPC socket, stays resident in memory).
+- `--no-daemon` – run as a standalone one-shot process without IPC.
+- `--quit` – tell a running daemon instance to exit cleanly.
+- `--query TEXT` – start with a search already typed in (or send query to a running daemon).
 - `--settings` – open directly in settings view.
 - `--screenshot FILE.png` – draw about 120 frames, save the window as a PNG and
   exit, without taking keyboard focus (used for automated visual checks).
@@ -104,12 +107,16 @@ Run the tests with `cargo test`.
 ## Install
 
 ```sh
-./install.sh             # build, then install for the current user and set up shortcuts
-./install.sh --uninstall # remove it again
+./install.sh             # build, install binary & icons, configure shortcuts & autostart, start daemon
+./install.sh --uninstall # stop daemon and remove all installed files & shortcuts
 ```
 
 The script needs no root access. It installs the binary to `~/.local/bin`, plus
-a menu entry and an icon under `$XDG_DATA_HOME` (default `~/.local/share`).
+a menu entry and an icon under `$XDG_DATA_HOME` (default `~/.local/share`), and an
+XDG autostart entry under `$XDG_CONFIG_HOME/autostart` (`~/.config/autostart/glint.desktop`)
+so Glint starts resident on login. At the end of installation, it automatically launches the
+daemon in the background.
+
 `install.sh` uses the `local` profile (no LTO, incremental) so reinstalls after
 a code change take seconds, while `cargo build --release` produces the LTO build.
 
@@ -134,6 +141,7 @@ Usage counts that improve ranking are stored locally in
 
 ## Performance Notes
 
+- **Resident daemon mode**: A background daemon instance stays resident in memory, idling at 0% CPU (0 CPU ticks over 10 seconds with blocking socket `accept`). When summoned, it displays the window in ~20–25 ms from client start to viewable on X11 (measured < 25 ms, beating the < 50 ms target). Client process exits in ~6 ms.
 - The file index is built in a background thread. While it fills up, results
   refresh at most twice a second.
 - Scoring a name allocates nothing, and only the results that can be shown are
@@ -153,6 +161,7 @@ focus-stealing prevention.
 | File | Purpose |
 | --- | --- |
 | `src/main.rs` | Entry point |
+| `src/ipc.rs` | Single-instance IPC over Unix domain socket |
 | `src/ui.rs` | Window, search logic, keyboard handling |
 | `src/draw.rs` | Result list, preview and icon drawing |
 | `src/index.rs` | Apps, file index, history, dates |

@@ -9,6 +9,7 @@ use crate::index;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
+#[derive(Clone, Default)]
 pub struct IconTheme {
     /// Icon directories in lookup order (theme chain, best sizes first).
     dirs: Vec<PathBuf>,

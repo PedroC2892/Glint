@@ -17,11 +17,45 @@ case $TARGET_DIR in
 esac
 DATA_HOME=${XDG_DATA_HOME:-"$HOME/.local/share"}
 case $DATA_HOME in /*) ;; *) DATA_HOME="$HOME/.local/share" ;; esac
+CONFIG_HOME=${XDG_CONFIG_HOME:-"$HOME/.config"}
+case $CONFIG_HOME in /*) ;; *) CONFIG_HOME="$HOME/.config" ;; esac
 BIN_DIR="$HOME/.local/bin"
 DESKTOP_FILE="$DATA_HOME/applications/$APP_ID.desktop"
+AUTOSTART_DIR="$CONFIG_HOME/autostart"
+AUTOSTART_FILE="$AUTOSTART_DIR/$APP_ID.desktop"
 PNG_SIZES="16 24 32 48 64 128 256 512"
 
 have() { command -v "$1" >/dev/null 2>&1; }
+
+desktop_quote() {
+    printf '"%s"' "$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g; s/`/\\`/g; s/\$/\\$/g')"
+}
+
+wait_for_daemon_stop() {
+    sock="${XDG_RUNTIME_DIR:-}/glint/glint.sock"
+    i=0
+    while [ "$i" -lt 30 ]; do
+        if [ -z "${XDG_RUNTIME_DIR:-}" ] || [ ! -e "$sock" ]; then
+            if ! have pgrep || ! pgrep -x "$APP_ID" >/dev/null 2>&1; then
+                break
+            fi
+        elif have python3; then
+            if ! python3 -c 'import socket, sys; s = socket.socket(socket.AF_UNIX); s.settimeout(0.2); s.connect(sys.argv[1])' "$sock" 2>/dev/null; then
+                break
+            fi
+        elif have pgrep; then
+            if ! pgrep -x "$APP_ID" >/dev/null 2>&1; then
+                break
+            fi
+        else
+            if [ ! -e "$sock" ]; then
+                break
+            fi
+        fi
+        sleep 0.1
+        i=$((i + 1))
+    done
+}
 
 refresh_caches() {
     if have update-desktop-database; then
@@ -40,7 +74,9 @@ refresh_caches() {
 }
 
 if [ "${1:-}" = "--uninstall" ]; then
-    rm -f "$BIN_DIR/$APP_ID" "$DESKTOP_FILE" "$DATA_HOME/pixmaps/$APP_ID.png" "$DATA_HOME/pixmaps/$APP_ID.svg"
+    "$BIN_DIR/$APP_ID" --quit >/dev/null 2>&1 || true
+    wait_for_daemon_stop
+    rm -f "$BIN_DIR/$APP_ID" "$DESKTOP_FILE" "$AUTOSTART_FILE" "$DATA_HOME/pixmaps/$APP_ID.png" "$DATA_HOME/pixmaps/$APP_ID.svg"
     for base in "$HOME/.icons/hicolor" "$DATA_HOME/icons/hicolor"; do
         rm -f "$base/scalable/apps/$APP_ID.svg"
         for s in $PNG_SIZES; do
@@ -112,6 +148,7 @@ install -m 644 "$REPO_DIR/assets/$APP_ID.svg" "$DATA_HOME/pixmaps/$APP_ID.svg" 2
 
 # 4. Menu entry.
 #    X-KDE-Shortcuts asks Plasma for Meta+Space (Win+Space) when it is free.
+EXEC_BIN=$(desktop_quote "$BIN_DIR/$APP_ID")
 mkdir -p "$(dirname "$DESKTOP_FILE")"
 cat > "$DESKTOP_FILE" <<EOF
 [Desktop Entry]
@@ -120,7 +157,7 @@ Version=1.5
 Name=Glint
 GenericName=Spotlight Search Launcher
 Comment=Spotlight-style search for apps, files, math, definitions and web
-Exec=$BIN_DIR/$APP_ID
+Exec=$EXEC_BIN
 Icon=$APP_ID
 Terminal=false
 Categories=Utility;Core;System;FileTools;
@@ -132,7 +169,7 @@ Actions=Settings;
 
 [Desktop Action Settings]
 Name=Glint Settings
-Exec=$BIN_DIR/$APP_ID --settings
+Exec=$EXEC_BIN --settings
 EOF
 chmod 644 "$DESKTOP_FILE"
 
@@ -161,10 +198,29 @@ if have gsettings && gsettings list-schemas 2>/dev/null | grep -q "org.gnome.set
     echo "Configured Super+Space (Win+Space) shortcut via GNOME settings."
 fi
 
+# 6. Autostart entry (daemon mode).
+mkdir -p "$AUTOSTART_DIR"
+cat > "$AUTOSTART_FILE" <<EOF
+[Desktop Entry]
+Type=Application
+Name=Glint
+Exec=$EXEC_BIN --daemon
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
+X-KDE-autostart-phase=2
+EOF
+chmod 644 "$AUTOSTART_FILE"
+
 refresh_caches
+
+# 7. Restart resident daemon.
+"$BIN_DIR/$APP_ID" --quit >/dev/null 2>&1 || true
+wait_for_daemon_stop
+nohup "$BIN_DIR/$APP_ID" --daemon >/dev/null 2>&1 &
 
 echo "Glint installed successfully!"
 echo "- Executable: $BIN_DIR/$APP_ID"
 echo "- Launcher entry: $DESKTOP_FILE"
+echo "- Autostart: $AUTOSTART_FILE (resident daemon mode)"
 echo "- Icon: $APP_ID (SVG & PNG suite installed)"
 echo "- Shortcut: Win + Space (Super + Space)"
