@@ -17,6 +17,43 @@
 
 ![Glint Search](docs/screenshots/hero.png)
 
+## Installation
+
+### Debian / Ubuntu (`.deb` Package)
+
+Prebuilt `.deb` packages for Debian 12+ and Ubuntu 22.04+ are available on the [Releases](https://github.com/PedroC2892/Glint/releases) page:
+
+```sh
+curl -LO https://github.com/PedroC2892/Glint/releases/download/v0.2.0/glint_0.2.0-1_amd64.deb
+curl -LO https://github.com/PedroC2892/Glint/releases/download/v0.2.0/SHA256SUMS
+sha256sum --check --ignore-missing SHA256SUMS
+sudo apt install ./glint_0.2.0-1_amd64.deb
+```
+
+To remove:
+```sh
+sudo apt remove glint
+```
+
+### From Source
+
+Requires a working Rust toolchain (edition 2024).
+
+```sh
+git clone https://github.com/PedroC2892/Glint.git
+cd Glint
+./install.sh
+```
+
+`install.sh` builds Glint with the fast `local` profile, copies the binary to `~/.local/bin/glint`, installs the desktop launcher and icon suite to `~/.local/share`, creates an autostart daemon entry in `~/.config/autostart/glint.desktop`, and starts the background daemon. No root permissions are required.
+
+To uninstall:
+```sh
+./install.sh --uninstall
+```
+
+Then set up the [shortcut](#shortcut-setup-win--space).
+
 ## Why Glint
 
 - **Instant open**: Summons in ~25 ms on X11 with the resident instance (a cold start used to take ~2,000 ms on a hybrid-GPU laptop). On Wayland the window is recreated on each open, which takes ~160–240 ms. Client dispatch completes and exits in ~6 ms.
@@ -29,6 +66,7 @@
 
 - **Applications & Settings**: Instantly finds installed applications and system settings panels (GNOME and KDE) through freedesktop `.desktop` entries with native icons.
 - **Files & Folders**: Indexes user home directories in the background, categorizing results into Documents, Folders, Images, Music, Movies, and Other Files with last-modified dates.
+- **Wildcard Search**: A query with `*` or `?` matches the whole name like a shell pattern: `*.deb` lists only names ending in `.deb`, `photo?.png` matches `photo1.png` but not `photo12.png`.
 - **Top Hit**: Highlights the most relevant match first, with adaptive ranking based on past access.
 - **Calculator**: Evaluates math expressions inline: `12*(3+4)`, `2^10`, `sqrt(2)`, `2pi`, `sin(1)`.
 - **Unit Conversions**: Converts length, mass, volume, time, digital storage, speed, area, and temperature: `10 km to mi`, `100 f in c`, `5 ft`.
@@ -54,36 +92,6 @@
 | `Esc` | Clear query; press again to close window |
 
 Clicking outside the search window or switching focus to another application closes Glint.
-
-## Installation
-
-### Debian / Ubuntu (`.deb` Package)
-
-Prebuilt `.deb` packages for Debian 12+ and Ubuntu 22.04+ are available on the [Releases](https://github.com/PedroC2892/Glint/releases) page:
-
-```sh
-sudo apt install ./glint_0.2.0-1_amd64.deb
-```
-
-To remove:
-```sh
-sudo apt remove glint
-```
-
-### From Source
-
-Requires a working Rust toolchain (edition 2024).
-
-```sh
-./install.sh
-```
-
-`install.sh` builds Glint with the fast `local` profile, copies the binary to `~/.local/bin/glint`, installs the desktop launcher and icon suite to `~/.local/share`, creates an autostart daemon entry in `~/.config/autostart/glint.desktop`, and starts the background daemon. No root permissions are required.
-
-To uninstall:
-```sh
-./install.sh --uninstall
-```
 
 ## Shortcut Setup (Win + Space)
 
