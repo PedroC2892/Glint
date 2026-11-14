@@ -797,7 +797,7 @@ impl eframe::App for Glint {
     }
 
     /// Closing within the save debounce must not lose settings changes.
-    fn on_exit(&mut self) {
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         if self.settings_dirty.is_some()
             && let Err(e) = self.settings.save()
         {
@@ -896,15 +896,14 @@ pub fn run() -> eframe::Result {
     } else {
         viewport = viewport.with_always_on_top();
     }
-    let mut options = eframe::NativeOptions { viewport, ..Default::default() };
-    // A small search panel doesn't need the discrete GPU. Waking it (the
-    // default) made start-up twice as slow and every frame slower on laptops
-    // with two GPUs. WGPU_POWER_PREF still overrides this.
-    if std::env::var_os("WGPU_POWER_PREF").is_none()
-        && let eframe::egui_wgpu::WgpuSetup::CreateNew(setup) = &mut options.wgpu_options.wgpu_setup
-    {
-        setup.power_preference = eframe::wgpu::PowerPreference::LowPower;
-    }
+    #[allow(unused_mut)]
+    let mut options = eframe::NativeOptions {
+        viewport,
+        renderer: eframe::Renderer::Glow,
+        ..Default::default()
+    };
+    // OpenGL (glow) avoids waking the discrete GPU during Vulkan ICD
+    // enumeration on laptops with hybrid graphics.
     #[cfg(target_os = "macos")]
     if shot {
         use winit::platform::macos::EventLoopBuilderExtMacOS;

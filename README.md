@@ -138,8 +138,8 @@ Usage counts that improve ranking are stored locally in
   refresh at most twice a second.
 - Scoring a name allocates nothing, and only the results that can be shown are
   kept, so a keystroke over ~150,000 files takes a few tens of milliseconds.
-- Glint asks for the low-power GPU, so laptops with two GPUs don't wake
-  the discrete one for a small panel. Set `WGPU_POWER_PREF=high` to override.
+- Glint uses the OpenGL (glow) renderer so laptops with two GPUs keep
+  the discrete GPU suspended during start-up instead of waking it for Vulkan ICD enumeration.
 - Dependencies are optimised even in debug builds.
 
 ## Platform Notes
