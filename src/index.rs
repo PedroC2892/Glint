@@ -342,9 +342,55 @@ pub fn index_files(
     tick();
 }
 
+/// Shell-style wildcard match over the whole name: `*` matches any run of
+/// characters (including none), `?` exactly one. Never allocates.
+pub fn glob_match(name: &str, pat: &str) -> bool {
+    let (mut n, mut p) = (name, pat);
+    // Pattern after the last `*`, and where in the name that `*` resumes.
+    let mut star: Option<(&str, &str)> = None;
+    loop {
+        let mut pc = p.chars();
+        match pc.next() {
+            Some('*') => {
+                p = pc.as_str();
+                star = Some((p, n));
+                continue;
+            }
+            Some(c) => {
+                let mut nc = n.chars();
+                if let Some(x) = nc.next()
+                    && (c == '?' || c == x)
+                {
+                    p = pc.as_str();
+                    n = nc.as_str();
+                    continue;
+                }
+            }
+            None if n.is_empty() => return true,
+            None => {}
+        }
+        // Mismatch: let the last `*` swallow one more character, or fail.
+        let Some((sp, sn)) = star else {
+            return false;
+        };
+        let mut c = sn.chars();
+        if c.next().is_none() {
+            return false;
+        }
+        star = Some((sp, c.as_str()));
+        p = sp;
+        n = c.as_str();
+    }
+}
+
 /// Name match score: exact > prefix > word prefix > initials > substring.
+/// A query with `*` or `?` is a wildcard pattern over the whole name instead
+/// (`*.deb` finds only names ending in `.deb`).
 /// Runs for every indexed name on each keystroke, so it never allocates.
 pub fn score(name_lc: &str, q: &str) -> i32 {
+    if q.contains(['*', '?']) {
+        return if glob_match(name_lc, q) { 70 } else { 0 };
+    }
     let words = || {
         name_lc
             .split(|c: char| !c.is_alphanumeric())
@@ -594,6 +640,15 @@ mod tests {
         assert_eq!(score("visual studio code", "vsc"), 50);
         assert_eq!(score("libreoffice", "office"), 40);
         assert_eq!(score("terminal", "xyz"), 0);
+        assert_eq!(score("glint_0.2.0-1_amd64.deb", "*.deb"), 70);
+        assert_eq!(score("debian.txt", "*.deb"), 0);
+        assert_eq!(score("report.deb.bak", "*.deb"), 0);
+        assert!(glob_match("photo1.png", "photo?.png"));
+        assert!(!glob_match("photo12.png", "photo?.png"));
+        assert!(glob_match("a-b-c", "a*b*c"));
+        assert!(glob_match("ção.txt", "?ão*"));
+        assert!(glob_match("", "*"));
+        assert!(!glob_match("abc", "*d"));
         let at = |s: u64| SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(s);
         let t = at(1_700_000_000); // 2023-11-14 22:13:20 UTC
         assert_eq!(format_time(t, 0, at(1_800_000_000)), "14/11/2023, 10:13 pm");
