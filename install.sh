@@ -205,7 +205,9 @@ refresh_caches
 # 7. Restart resident daemon.
 "$BIN_DIR/$APP_ID" --quit >/dev/null 2>&1 || true
 wait_for_daemon_stop
-nohup "$BIN_DIR/$APP_ID" --daemon >/dev/null 2>&1 &
+if ! grep -q '"keep_running": *false' "${XDG_CONFIG_HOME:-$HOME/.config}/glint/config.json" 2>/dev/null; then
+    nohup "$BIN_DIR/$APP_ID" --daemon >/dev/null 2>&1 &
+fi
 
 echo "Glint installed successfully!"
 echo "- Executable: $BIN_DIR/$APP_ID"

@@ -22,6 +22,11 @@ fn main() -> eframe::Result {
     let args = ui::Args::parse();
 
     #[cfg(target_os = "linux")]
+    if args.daemon && !config::load().0.keep_running {
+        return Ok(());
+    }
+
+    #[cfg(target_os = "linux")]
     {
         // --no-daemon and --screenshot skip daemon logic entirely.
         if !args.no_daemon

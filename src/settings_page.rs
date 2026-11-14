@@ -21,6 +21,7 @@ const SIDE: f32 = 20.0;
 /// One focusable row of the page.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum SRow {
+    KeepRunning,
     Accent,
     Custom,
     Opacity,
@@ -34,7 +35,7 @@ pub(crate) enum SRow {
 
 /// Number of rows currently shown (extra roots only appear with "outside home").
 pub(crate) fn row_count(st: &Settings) -> usize {
-    5 + if st.outside_home {
+    6 + if st.outside_home {
         st.extra_roots.len() + 1
     } else {
         0
@@ -44,13 +45,14 @@ pub(crate) fn row_count(st: &Settings) -> usize {
 /// The row at a position of the focus order; `None` past the end.
 pub(crate) fn row_at(st: &Settings, idx: usize) -> Option<SRow> {
     match idx {
-        0 => Some(SRow::Accent),
-        1 => Some(SRow::Custom),
-        2 => Some(SRow::Opacity),
-        3 => Some(SRow::Hidden),
-        4 => Some(SRow::Outside),
+        0 => Some(SRow::KeepRunning),
+        1 => Some(SRow::Accent),
+        2 => Some(SRow::Custom),
+        3 => Some(SRow::Opacity),
+        4 => Some(SRow::Hidden),
+        5 => Some(SRow::Outside),
         _ => {
-            let mut k = idx - 5;
+            let mut k = idx - 6;
             if st.outside_home {
                 if k < st.extra_roots.len() {
                     return Some(SRow::Root(k));
@@ -355,6 +357,10 @@ impl Glint {
     /// Left/Right (`dir`) or Enter/Space (`act`) on a row.
     fn adjust_row(&mut self, ctx: &egui::Context, row: Option<SRow>, dir: i32, act: bool) {
         match row {
+            Some(SRow::KeepRunning) if act => {
+                self.settings.keep_running ^= true;
+                self.touch(ctx, false);
+            }
             Some(SRow::Accent) if dir != 0 || act => {
                 self.settings.accent =
                     cycle_preset(self.settings.accent, if dir != 0 { dir } else { 1 });
@@ -437,6 +443,23 @@ impl Glint {
             ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                 ui.spacing_mut().item_spacing = Vec2::ZERO;
                 let cx = &mut cx;
+
+                heading(ui, "General");
+                card(ui, ROW_SUB_H, |ui| {
+                    let (_, c, r) = shell(ui, cx, ROW_SUB_H, true);
+                    labels(
+                        ui,
+                        c,
+                        56.0,
+                        "Keep Glint running in the background",
+                        Some("Opens instantly. Off: starts on demand and frees its memory when closed"),
+                    );
+                    switch(ui, c, "sw_keep_running", st.keep_running, accent);
+                    if r.clicked() {
+                        st.keep_running ^= true;
+                        changed = true;
+                    }
+                });
 
                 heading(ui, "Appearance");
                 card(ui, ROW_H * 2.0 + ROW_SUB_H, |ui| {
@@ -686,17 +709,21 @@ mod tests {
             ..Settings::default()
         };
         st.outside_home = false;
-        assert_eq!(row_count(&st), 7);
-        assert_eq!(row_at(&st, 5), Some(SRow::Online));
-        assert_eq!(row_at(&st, 6), Some(SRow::Reset));
-        assert_eq!(row_at(&st, 7), None);
+        assert_eq!(row_count(&st), 8);
+        assert_eq!(row_at(&st, 0), Some(SRow::KeepRunning));
+        assert_eq!(row_at(&st, 1), Some(SRow::Accent));
+        assert_eq!(row_at(&st, 6), Some(SRow::Online));
+        assert_eq!(row_at(&st, 7), Some(SRow::Reset));
+        assert_eq!(row_at(&st, 8), None);
         st.outside_home = true;
-        assert_eq!(row_count(&st), 10);
-        assert_eq!(row_at(&st, 5), Some(SRow::Root(0)));
-        assert_eq!(row_at(&st, 6), Some(SRow::Root(1)));
-        assert_eq!(row_at(&st, 7), Some(SRow::AddFolder));
-        assert_eq!(row_at(&st, 8), Some(SRow::Online));
-        assert_eq!(row_at(&st, 9), Some(SRow::Reset));
-        assert_eq!(row_at(&st, 10), None);
+        assert_eq!(row_count(&st), 11);
+        assert_eq!(row_at(&st, 0), Some(SRow::KeepRunning));
+        assert_eq!(row_at(&st, 1), Some(SRow::Accent));
+        assert_eq!(row_at(&st, 6), Some(SRow::Root(0)));
+        assert_eq!(row_at(&st, 7), Some(SRow::Root(1)));
+        assert_eq!(row_at(&st, 8), Some(SRow::AddFolder));
+        assert_eq!(row_at(&st, 9), Some(SRow::Online));
+        assert_eq!(row_at(&st, 10), Some(SRow::Reset));
+        assert_eq!(row_at(&st, 11), None);
     }
 }

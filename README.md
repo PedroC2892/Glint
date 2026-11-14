@@ -131,6 +131,7 @@ glint [--query TEXT] [--settings] [--daemon] [--no-daemon] [--quit]
 
 Settings are saved in `$XDG_CONFIG_HOME/glint/config.json` (defaults to `~/.config/glint/config.json`).
 
+- **General**: Toggle background resident mode (`keep_running`: opens instantly while resident in memory; off: starts on demand and frees its memory when closed).
 - **Appearance**: Accent color palettes, custom hex colors, and window background opacity (requires an active desktop compositor).
 - **Files**: Toggle indexing of hidden files, configure additional search directories, or exclude directory patterns via `skip_dirs`.
 - **Search**: Toggle online definitions and currency updates.

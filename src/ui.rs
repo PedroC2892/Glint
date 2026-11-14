@@ -344,6 +344,7 @@ pub struct Glint {
     warm_slot: Arc<Mutex<Option<Warm>>>,
     pub is_wayland: bool,
     show_t0: Option<Instant>,
+    quit_requested: Arc<AtomicBool>,
 }
 
 #[allow(dead_code)]
@@ -361,6 +362,7 @@ impl Glint {
         warm_slot: Arc<Mutex<Option<Warm>>>,
         #[cfg(target_os = "linux")] shared_window_id: Arc<AtomicU32>,
         start_hidden: bool,
+        quit_requested: Arc<AtomicBool>,
     ) -> Self {
         egui_extras::install_image_loaders(&cc.egui_ctx);
         cc.egui_ctx.set_visuals(egui::Visuals::dark());
@@ -445,6 +447,7 @@ impl Glint {
             warm_slot,
             is_wayland,
             show_t0: None,
+            quit_requested,
         };
 
         if start_hidden {
@@ -475,6 +478,7 @@ impl Glint {
             #[cfg(target_os = "linux")]
             shared_window_id,
             false,
+            Arc::new(AtomicBool::new(false)),
         );
         if let Some(err) = config::load().1 {
             app.toast(&cc.egui_ctx, &err);
@@ -565,6 +569,11 @@ impl Glint {
         }
         if self.settings.index_differs(&self.index_snapshot) {
             self.spawn_index(ctx);
+        }
+        if self.settings.keep_running != self.index_snapshot.keep_running
+            && let Err(e) = config::sync_autostart(self.settings.keep_running)
+        {
+            self.toast(ctx, &format!("Could not update autostart: {e}"));
         }
         self.mode = Mode::Search;
         // A stale unfocused state must not close the popover right away.
@@ -845,9 +854,16 @@ impl Glint {
 
     /// Hide the panel (daemon mode) or close it (one-shot mode).
     fn dismiss(&mut self, ctx: &egui::Context) {
-        if self.daemon_mode {
+        if self.daemon_mode && self.settings.keep_running {
             self.hide(ctx);
         } else {
+            if self.daemon_mode {
+                self.quit_requested.store(true, Ordering::SeqCst);
+            }
+            if self.settings_dirty.is_some() {
+                self.save_settings(ctx);
+            }
+            index::save_history(&self.history);
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
     }
@@ -1116,6 +1132,14 @@ impl Glint {
 
     /// Process commands from the IPC listener thread.
     fn process_ui_cmds(&mut self, ctx: &egui::Context) {
+        if self.quit_requested.load(Ordering::SeqCst) {
+            if self.settings_dirty.is_some() {
+                self.save_settings(ctx);
+            }
+            index::save_history(&self.history);
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            return;
+        }
         let cmds: Vec<UiCmd> = {
             let mut lock = self.ui_cmds.lock().unwrap();
             std::mem::take(&mut *lock)
@@ -1386,6 +1410,9 @@ impl eframe::App for Glint {
             eprintln!("Could not save settings: {e}");
         }
         index::save_history(&self.history);
+        if !self.settings.keep_running {
+            self.quit_requested.store(true, Ordering::SeqCst);
+        }
 
         let warm = Warm {
             apps: std::mem::take(&mut self.apps),
@@ -1608,6 +1635,7 @@ pub fn run_daemon(
 
     let mut result = Ok(());
     let mut t_open: Option<Instant> = None;
+    let mut repair_autostart = !args.daemon;
 
     loop {
         // If on Wayland and starting hidden: don't open window yet; block on IPC channel.
@@ -1647,6 +1675,9 @@ pub fn run_daemon(
         let cur_settings = open_settings;
         let cur_hidden = start_hidden;
         let cur_t0 = t_open.take();
+        let q_flag = quit_requested.clone();
+        let do_repair = repair_autostart;
+        repair_autostart = false;
 
         result = eframe::run_native(
             "Glint",
@@ -1655,9 +1686,24 @@ pub fn run_daemon(
                 *c_slot.lock().unwrap() = Some(cc.egui_ctx.clone());
 
                 let mut app = Glint::from_warm(
-                    cc, warm, None, cur_query, true, u_cmds, w_slot, s_win, cur_hidden,
+                    cc, warm, None, cur_query, true, u_cmds, w_slot, s_win, cur_hidden, q_flag,
                 );
                 app.show_t0 = cur_t0;
+
+                if do_repair {
+                    let res = std::env::current_exe()
+                        .map_err(|e| e.to_string())
+                        .and_then(|exe| {
+                            config::repair_autostart(
+                                &config::autostart_path(),
+                                app.settings.keep_running,
+                                &exe,
+                            )
+                        });
+                    if let Err(e) = res {
+                        app.toast(&cc.egui_ctx, &format!("Could not update autostart: {e}"));
+                    }
+                }
 
                 if cur_settings {
                     app.enter_settings();
