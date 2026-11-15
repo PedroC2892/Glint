@@ -24,10 +24,10 @@
 Prebuilt `.deb` packages for Debian 12+ and Ubuntu 22.04+ are available on the [Releases](https://github.com/PedroC2892/Glint/releases) page:
 
 ```sh
-curl -LO https://github.com/PedroC2892/Glint/releases/download/v0.2.0/glint_0.2.0-1_amd64.deb
-curl -LO https://github.com/PedroC2892/Glint/releases/download/v0.2.0/SHA256SUMS
+curl -LO https://github.com/PedroC2892/Glint/releases/download/v0.3.0/glint_0.3.0-1_amd64.deb
+curl -LO https://github.com/PedroC2892/Glint/releases/download/v0.3.0/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
-sudo apt install ./glint_0.2.0-1_amd64.deb
+sudo apt install ./glint_0.3.0-1_amd64.deb
 ```
 
 To remove:
